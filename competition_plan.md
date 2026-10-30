@@ -251,8 +251,9 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
   - [x] Apply reverse fault injection via Gemma 4 31B to generate 350 multi-file synthetic bug tasks (`synthetic_tasks.jsonl`).
   - [x] Collect and filter verified graph-first teacher trajectories: 113 pristine 4-turn SFT trajectories (`sft_verified.jsonl`).
 - [ ] **Milestone 4: Gemma 4 QLoRA SFT & RFT Training (Days 11–14)**
-  - [ ] Train the SFT adapter on verified teacher trajectories.
-  - [ ] Generate $N=8$ rollouts per task from the SFT checkpoint and run RFT across the three verifier conditions ($V_{\text{free}}$, $V_{\text{graph}}$, $V_{\text{exec}} + V_{\text{graph}}$).
+  - [x] Train the SFT adapter on verified teacher trajectories (Gemma 4 31B rank-32 LoRA, loss dropped from 2.046 to 0.3935 across 3 epochs, adapter exported to `submission/adapters/main_lora/`).
+  - [ ] Evaluate SFT adapter on OOD holdout (`requests` + `httpx`) to record Table 2 Row 2.
+  - [ ] Generate rollouts from SFT checkpoint and run RFT across the three verifier conditions ($V_{\text{free}}$, $V_{\text{graph}}$, $V_{\text{exec}} + V_{\text{graph}}$).
 - [ ] **Milestone 5: Final Evaluation, Submission, & Paper Writeup (Days 15–18)**
   - [ ] Evaluate all checkpoints on the strict OOD holdout split (`requests` + `httpx`, 14 tasks) and log hardware/token efficiency metrics.
   - [ ] Package the best checkpoint into `submission.zip` and submit to the competition leaderboard.

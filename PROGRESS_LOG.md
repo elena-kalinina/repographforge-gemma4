@@ -53,15 +53,30 @@
 
 ---
 
-## 2. Action Plan for Milestone 4: Gemma 4 QLoRA SFT & RFT Training
+### ✅ Milestone 4: Stage 4A QLoRA SFT Post-Training (COMPLETED!)
+- **Gemma 4 31B SFT Adapter Trained on 4x L4 GPUs:**
+  - Rank-32 LoRA (`r=32`, `alpha=64`, lr=$2\times 10^{-4}$) trained across all 410 linear projections of Gemma 4 31B (244.8M trainable parameters / 0.78% of model).
+  - Trained for 3 full epochs over 112 verified RepoGraphForge trajectories (42 optimizer steps, effective batch size = 8).
+  - **Convergence:** Smooth, textbook loss trajectory from **`2.046` down to `0.3935`** (overall average train loss: `0.7195`).
+  - **Adapter Export:** Safely exported `adapter_config.json` and `adapter_model.safetensors` to `/kaggle/working/submission/adapters/main_lora/`.
+  - **Runtime & Efficiency:** 1,863 seconds (~31.0 mins), preserving over 25 hours of Kaggle GPU quota.
 
-Milestone 4 is the training phase where we adapt Gemma 4 with parameter-efficient LoRA adapters:
+---
 
-### Step 4.1: QLoRA Supervised Fine-Tuning (SFT) (~45–60 mins)
-- Train a rank-32 LoRA adapter (`r=32`, `alpha=64`, lr=$2\times 10^{-4}$) on `sft_verified.jsonl` using HuggingFace TRL / SFTTrainer on 4x L4 GPUs.
-- Export trained adapter weights to `submission/adapters/main_lora/`.
+## 2. Action Plan for Next Session: Evaluating SFT (Table 2 Row 2) & Best-of-N RFT
 
-### Step 4.2: Best-of-N Rollout & Rejection Fine-Tuning (RFT)
-- Sample candidate rollouts from the SFT checkpoint.
-- Filter candidate rollouts using our verified $V_{\text{graph}}$ verifier.
-- Low learning-rate RFT alignment pass (lr=$5\times 10^{-5}$).
+With the trained adapter ready in `submission/adapters/main_lora/`:
+
+### Step 4.1: Benchmark SFT Checkpoint on OOD Holdout (Table 2 Row 2)
+- Start vLLM serving Gemma 4 31B with the new adapter loaded:
+  `--lora-modules main_lora=/kaggle/working/submission/adapters/main_lora`
+- Run `swegemma eval` on the 14 holdout tasks (`requests` + `httpx`) to record **Table 2 Row 2 (SFT Adapter Pass@1)**.
+- Expectation: Substantial improvement over Zero-Shot 0.0% due to learned graph-first navigation (`get_code_subgraph` calling).
+
+### Step 4.2: Best-of-N Rejection Fine-Tuning (RFT Showdown)
+- Sample $N=4$ rollouts from SFT checkpoint on held-out synthetic tasks.
+- Filter candidate rollouts under:
+  1. $V_{\text{free}}$ (unanchored judge)
+  2. $V_{\text{graph}}$ (GraphForge evidence rubric)
+  3. $V_{\text{exec}} + V_{\text{graph}}$ (hybrid oracle)
+- Train low-lr alignment pass (lr=$5\times 10^{-5}$) to complete Table 2 Rows 3, 4, 5.
