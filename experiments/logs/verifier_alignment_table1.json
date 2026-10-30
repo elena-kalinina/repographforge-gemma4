@@ -1,0 +1,31 @@
+{
+  "experiment": "Table 1: Verifier Alignment & Sycophantic Patch Drift Analysis",
+  "evaluated_model": "google/gemma-4-31b-it-qat-w4a16-ct",
+  "hardware": "Kaggle 4x NVIDIA L4 (96GB VRAM, Tensor Parallelism = 4)",
+  "num_evaluated_candidates": 386,
+  "gold_passing_patches": 129,
+  "failing_mutated_and_drift_patches": 257,
+  "summary": {
+    "v_free_metrics": {
+      "description": "Unanchored LLM Judge (Problem statement + diff)",
+      "precision": 0.8660,
+      "recall": 0.6512,
+      "f1": 0.7434,
+      "false_positive_drift_rate": 0.0506,
+      "cohens_kappa": 0.6401
+    },
+    "v_graph_metrics": {
+      "description": "GraphForge Evidence Rubric Judge (Problem statement + diff + R_G structural contracts)",
+      "precision": 0.8571,
+      "recall": 0.7442,
+      "f1": 0.7967,
+      "false_positive_drift_rate": 0.0623,
+      "cohens_kappa": 0.7051
+    }
+  },
+  "delta_improvements": {
+    "recall_improvement": "+9.30 percentage points (+14.28% relative)",
+    "f1_improvement": "+5.33 points",
+    "cohens_kappa_improvement": "+0.0650 (crosses into substantial agreement > 0.70)"
+  }
+}

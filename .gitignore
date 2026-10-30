@@ -1,0 +1,65 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Data directories (raw competition data is large ~22GB)
+data/raw/
+data/synthetic_tasks/
+data/trajectories/
+*.npz
+*.tar.gz
+*.tgz
+*.zip
+
+# Keep data splits directory and tracked split files if needed
+!data/splits/.gitkeep
+!data/synthetic_tasks/.gitkeep
+!data/trajectories/.gitkeep
+
+# Experiment logs and model weights
+experiments/logs/*
+!experiments/logs/.gitkeep
+!experiments/logs/*.json
+experiments/plots/*
+!experiments/plots/.gitkeep
+*.pt
+*.bin
+*.safetensors
+submission/adapters/main_lora/*
+!submission/adapters/main_lora/.gitkeep
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
