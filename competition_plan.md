@@ -254,6 +254,6 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
   - [ ] Train the SFT adapter on verified teacher trajectories.
   - [ ] Generate $N=8$ rollouts per task from the SFT checkpoint and run RFT across the three verifier conditions ($V_{\text{free}}$, $V_{\text{graph}}$, $V_{\text{exec}} + V_{\text{graph}}$).
 - [ ] **Milestone 5: Final Evaluation, Submission, & Paper Writeup (Days 15–18)**
-  - [ ] Evaluate all 5 checkpoints on the `httpx` holdout split and log hardware/token efficiency metrics.
+  - [ ] Evaluate all checkpoints on the strict OOD holdout split (`requests` + `httpx`, 14 tasks) and log hardware/token efficiency metrics.
   - [ ] Package the best checkpoint into `submission.zip` and submit to the competition leaderboard.
   - [ ] Compile the tables, figures, and methodology into the final Kaggle Paper Track writeup and publish the companion dataset/notebook.
