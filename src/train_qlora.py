@@ -111,10 +111,21 @@ def train(
         if messages:
             standardized = []
             for m in messages:
-                role = "model" if m.get("role") in ("assistant", "model") else "user"
+                role = "model" if m.get("role") in ("assistant", "model") else m.get("role", "user")
                 content = m.get("content", "")
                 if "tool_calls" in m and m["tool_calls"]:
-                    content = f"{content}\n{m['tool_calls']}".strip()
+                    tcs = m["tool_calls"]
+                    # Render native Gemma 4 tool call tags instead of serializing into plain content text
+                    rendered_calls = []
+                    if isinstance(tcs, list):
+                        for tc in tcs:
+                            fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                            call_dict = {"name": fn.get("name", ""), "arguments": fn.get("arguments", {})}
+                            rendered_calls.append(f"<tool_call>\n{json.dumps(call_dict)}\n</tool_call>")
+                    else:
+                        rendered_calls.append(f"<tool_call>\n{tcs}\n</tool_call>")
+                    calls_str = "\n".join(rendered_calls)
+                    content = f"{content}\n{calls_str}".strip() if content else calls_str
                 standardized.append({"role": role, "content": content})
             try:
                 text = tokenizer.apply_chat_template(standardized, tokenize=False)

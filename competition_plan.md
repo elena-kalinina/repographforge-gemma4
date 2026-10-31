@@ -251,9 +251,12 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
   - [x] Apply reverse fault injection via Gemma 4 31B to generate 350 multi-file synthetic bug tasks (`synthetic_tasks.jsonl`).
   - [x] Collect and filter verified graph-first teacher trajectories: 113 pristine 4-turn SFT trajectories (`sft_verified.jsonl`).
 - [ ] **Milestone 4: Gemma 4 QLoRA SFT & RFT Training (Days 11–14)**
-  - [x] Train the SFT adapter on verified teacher trajectories (Gemma 4 31B rank-32 LoRA, loss dropped from 2.046 to 0.3935 across 3 epochs, adapter exported to `submission/adapters/main_lora/`).
-  - [ ] Evaluate SFT adapter on OOD holdout (`requests` + `httpx`) to record Table 2 Row 2.
-  - [ ] Generate rollouts from SFT checkpoint and run RFT across the three verifier conditions ($V_{\text{free}}$, $V_{\text{graph}}$, $V_{\text{exec}} + V_{\text{graph}}$).
+  - [x] Train initial SFT adapter on verified teacher trajectories (Gemma 4 31B rank-32 LoRA, loss: 2.046 -> 0.3935).
+  - [x] Evaluate SFT v1 on holdout tasks: confirmed rapid 15s code-graph bug localization (`_encode_files`, `is_file_like`, `SupportsRead`), diagnosed text-tool serialization gap.
+  - [x] Refactor data formatting and training collators to enforce native Gemma 4 function-calling tokens (`<tool_call>`).
+  - [x] Implement Stage 4B Best-of-N RFT pipeline (`src/rft_sampler.py`, `src/rft_pipeline.py`) across the three verifier conditions ($V_{\text{free}}$, $V_{\text{graph}}$, $V_{\text{exec}}$).
+  - [ ] Train SFT v2 with native `<tool_call>` formatting and evaluate on 14-task holdout suite (`requests` + `httpx`) for Table 2 Row 2.
+  - [ ] Run RFT alignment pass on filtered rollouts to produce comparison adapters for Table 2 Rows 3, 4, 5.
 - [ ] **Milestone 5: Final Evaluation, Submission, & Paper Writeup (Days 15–18)**
   - [ ] Evaluate all checkpoints on the strict OOD holdout split (`requests` + `httpx`, 14 tasks) and log hardware/token efficiency metrics.
   - [ ] Package the best checkpoint into `submission.zip` and submit to the competition leaderboard.

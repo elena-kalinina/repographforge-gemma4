@@ -53,30 +53,37 @@
 
 ---
 
-### ✅ Milestone 4: Stage 4A QLoRA SFT Post-Training (COMPLETED!)
+### ✅ Milestone 4: Stage 4A QLoRA SFT Post-Training (SFT v1 Completed & Evaluated)
 - **Gemma 4 31B SFT Adapter Trained on 4x L4 GPUs:**
   - Rank-32 LoRA (`r=32`, `alpha=64`, lr=$2\times 10^{-4}$) trained across all 410 linear projections of Gemma 4 31B (244.8M trainable parameters / 0.78% of model).
   - Trained for 3 full epochs over 112 verified RepoGraphForge trajectories (42 optimizer steps, effective batch size = 8).
   - **Convergence:** Smooth, textbook loss trajectory from **`2.046` down to `0.3935`** (overall average train loss: `0.7195`).
-  - **Adapter Export:** Safely exported `adapter_config.json` and `adapter_model.safetensors` to `/kaggle/working/submission/adapters/main_lora/`.
+  - **Adapter Export:** Safely exported `adapter_config.json` and `adapter_model.safetensors` (979.56 MB) to `submission/adapters/main_lora/`.
   - **Runtime & Efficiency:** 1,863 seconds (~31.0 mins), preserving over 25 hours of Kaggle GPU quota.
+
+- **Holdout Evaluation & Empirical Finding (The Text-Tool Serialization Trap):**
+  - Evaluated SFT v1 in the live `swegemma` sandbox on holdout tasks (`requests_7505`, `requests_7502`).
+  - **Massive Localization Breakthrough:** Model diagnosed root causes in under 15 seconds (vs. 60+ seconds of blind `grep` loops in zero-shot base), identifying exact symbols: `_encode_files`, `is_file_like`, `SupportsRead`, and `PreparedRequest.body`.
+  - **Observed Failure Mode:** Model output its tool invocations as raw JSON text strings inside conversational messages (`[{'id': 'call_4', ...}]`) rather than triggering native environment function calls.
+  - **Fix A Result:** Prompt steering alone failed to overcome fine-tuned next-token probabilities.
+  - **Scientific Conclusion for Paper Track:** Establishes the necessity of strict structural token wrapping (`<tool_call>`) in SFT formatting to bridge the gap between *semantic reasoning* and *environment execution*.
 
 ---
 
-## 2. Action Plan for Next Session: Evaluating SFT (Table 2 Row 2) & Best-of-N RFT
+## 2. Updated Action Plan: SFT v2 (Native Tool Tokens), Full Benchmark, & Stage 4B RFT
 
-With the trained adapter ready in `submission/adapters/main_lora/`:
+### Step 4.1: Retrain SFT v2 with Native `<tool_call>` Tokens (~25 mins)
+- Formatter updated in `src/train_qlora.py` and `src/teacher_rollouts.py` to wrap tool calls in native `<tool_call>\n{"name": ..., "arguments": ...}\n</tool_call>` tokens.
+- Re-run SFT training on 4x L4 GPUs using the updated collator.
 
-### Step 4.1: Benchmark SFT Checkpoint on OOD Holdout (Table 2 Row 2)
-- Start vLLM serving Gemma 4 31B with the new adapter loaded:
-  `--lora-modules main_lora=/kaggle/working/submission/adapters/main_lora`
-- Run `swegemma eval` on the 14 holdout tasks (`requests` + `httpx`) to record **Table 2 Row 2 (SFT Adapter Pass@1)**.
-- Expectation: Substantial improvement over Zero-Shot 0.0% due to learned graph-first navigation (`get_code_subgraph` calling).
+### Step 4.2: Full Holdout Benchmark (Table 2 Row 2)
+- Serve SFT v2 via vLLM with `main_lora`.
+- Run evaluation across the full 14-task holdout suite (`requests` + `httpx`) to record **Table 2 Row 2 (SFT Pass@1)**.
 
-### Step 4.2: Best-of-N Rejection Fine-Tuning (RFT Showdown)
-- Sample $N=4$ rollouts from SFT checkpoint on held-out synthetic tasks.
-- Filter candidate rollouts under:
-  1. $V_{\text{free}}$ (unanchored judge)
-  2. $V_{\text{graph}}$ (GraphForge evidence rubric)
-  3. $V_{\text{exec}} + V_{\text{graph}}$ (hybrid oracle)
+### Step 4.3: Stage 4B Best-of-N Rejection Fine-Tuning (RFT Showdown)
+- Run `src/rft_sampler.py` to sample $N=4$ rollouts per task on 50 held-out synthetic tasks.
+- Run `src/rft_pipeline.py` to partition rollouts across:
+  1. $V_{\text{free}}$ (unanchored judge) -> `rft_v_free_accepted.jsonl`
+  2. $V_{\text{graph}}$ (GraphForge evidence rubric) -> `rft_v_graph_accepted.jsonl`
+  3. $V_{\text{exec}} + V_{\text{graph}}$ (hybrid oracle) -> `rft_hybrid_accepted.jsonl`
 - Train low-lr alignment pass (lr=$5\times 10^{-5}$) to complete Table 2 Rows 3, 4, 5.

@@ -122,10 +122,17 @@ def generate_teacher_trajectory(
                     msgs = parsed.get("messages", [])
                     # Quality gate: must have at least 4 turns and valid user/assistant messages
                     if msgs and len(msgs) >= 4:
-                        text_representation = "\n".join(
-                            f"<|im_start|>{m.get('role', 'user')}\n{m.get('content', '')}<|im_end|>"
-                            for m in msgs
-                        )
+                        # Render native Gemma turn and tool_call tags
+                        turns = []
+                        for m in msgs:
+                            role = "model" if m.get("role") in ("assistant", "model") else m.get("role", "user")
+                            content = m.get("content", "")
+                            if "tool_calls" in m and m["tool_calls"]:
+                                for tc in m["tool_calls"]:
+                                    fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                                    content += f"\n<tool_call>\n{json.dumps({'name': fn.get('name', ''), 'arguments': fn.get('arguments', {})})}\n</tool_call>"
+                            turns.append(f"<|turn|>{role}\n{content.strip()}<turn|>")
+                        text_representation = "\n".join(turns)
                         return {
                             "synthetic_id": syn_id,
                             "anchor_node": anchor,
