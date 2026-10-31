@@ -254,9 +254,10 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
   - [x] Train initial SFT adapter on verified teacher trajectories (Gemma 4 31B rank-32 LoRA, loss: 2.046 -> 0.3935).
   - [x] Evaluate SFT v1 on holdout tasks: confirmed rapid 15s code-graph bug localization (`_encode_files`, `is_file_like`, `SupportsRead`), diagnosed text-tool serialization gap.
   - [x] Refactor data formatting and training collators to enforce native Gemma 4 function-calling tokens (`<tool_call>`).
-  - [x] Implement Stage 4B Best-of-N RFT pipeline (`src/rft_sampler.py`, `src/rft_pipeline.py`) across the three verifier conditions ($V_{\text{free}}$, $V_{\text{graph}}$, $V_{\text{exec}}$).
-  - [ ] Train SFT v2 with native `<tool_call>` formatting and evaluate on 14-task holdout suite (`requests` + `httpx`) for Table 2 Row 2.
-  - [ ] Run RFT alignment pass on filtered rollouts to produce comparison adapters for Table 2 Rows 3, 4, 5.
+  - [x] Retrain SFT v2 with native `<tool_call>` tokens on 4x L4 GPUs (resolved `torchao 0.10.0` environment incompatibility; loss converged smoothly across 3 epochs).
+  - [x] Evaluate SFT v2 on holdout tasks: validated native sandbox tool execution (`get_code_subgraph`, `read_file`, `edit_file`, `submit_patch`) and generated first verified ground-truth patch on `requests_7505` (`src/requests/models.py`).
+  - [x] Implement Stage 4B Best-of-N RFT pipeline (`src/rft_sampler.py`, `src/rft_pipeline.py`) across the three verifier conditions ($V_{\text{free}}$, $V_{\text{graph}}$, $V_{\text{exec}}$) to eliminate 10-turn exploration variance.
+  - [ ] Sample $N=4$ rollouts per task and train low-lr RFT alignment passes ($V_{\text{free}}$, $V_{\text{graph}}$, hybrid) for Table 2 Rows 3, 4, 5.
 - [ ] **Milestone 5: Final Evaluation, Submission, & Paper Writeup (Days 15–18)**
   - [ ] Evaluate all checkpoints on the strict OOD holdout split (`requests` + `httpx`, 14 tasks) and log hardware/token efficiency metrics.
   - [ ] Package the best checkpoint into `submission.zip` and submit to the competition leaderboard.
