@@ -87,17 +87,41 @@ def train(
         tokenizer.pad_token = tokenizer.eos_token
 
     # 1. Load base model across 4x L4 GPUs
+    try:
+        import peft.import_utils
+        peft.import_utils.is_torchao_available = lambda: False
+    except Exception:
+        pass
+
     model = load_gemma4_model(model_id)
 
-    # 2. Attach Rank-32 LoRA Config
+    # 2. Discover Text-Only Linear Targets (Skips vision/audio ClippableLinear)
+    import torch.nn as nn
+    TEXT_SUFFIXES = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
+    text_linear_targets = [
+        name for name, mod in model.named_modules()
+        if name.endswith(TEXT_SUFFIXES)
+        and isinstance(mod, nn.Linear)
+        and "vision" not in name.lower()
+        and "audio" not in name.lower()
+    ]
+    if not text_linear_targets:
+        text_linear_targets = list(TEXT_SUFFIXES)
+    logger.info("Discovered %d text linear targets for LoRA.", len(text_linear_targets))
+
+    # 3. Attach Rank-32 LoRA Config
     peft_config = LoraConfig(
         r=32,
         lora_alpha=64,
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        target_modules=text_linear_targets,
     )
+    if hasattr(model, "gradient_checkpointing_enable"):
+        model.gradient_checkpointing_enable()
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
     model = get_peft_model(model, peft_config)
     logger.info("LoRA adapter attached:")
     model.print_trainable_parameters()
@@ -180,7 +204,14 @@ def train(
     output_adapter_dir.mkdir(parents=True, exist_ok=True)
     trainer.model.save_pretrained(str(output_adapter_dir))
     tokenizer.save_pretrained(str(output_adapter_dir))
-    logger.info("✓ Successfully exported Gemma 4 LoRA adapter to: %s", output_adapter_dir)
+
+    # Strip disallowed file extensions (.jinja, .md) to comply with ADK validator
+    for f in output_adapter_dir.glob("*.jinja"):
+        f.unlink()
+    for f in output_adapter_dir.glob("README.md"):
+        f.unlink()
+
+    logger.info("✓ Successfully exported and sanitized Gemma 4 LoRA adapter in: %s", output_adapter_dir)
 
 
 def main() -> None:
@@ -188,7 +219,7 @@ def main() -> None:
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=Path("/kaggle/input/models/google/gemma-4/transformers/gemma-4-12b-it-qat-q4_0-unquantized/2"),
+        default=Path("/kaggle/input/models/google/gemma-4/transformers/gemma-4-31b-it-qat-q4_0-unquantized/2"),
         help="Path to local unquantized model",
     )
     parser.add_argument(

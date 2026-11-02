@@ -43,6 +43,24 @@ Format all tool calls using native <tool_call> tags:
 """
 
 
+def auto_detect_vllm_model(base_url: str = "http://127.0.0.1:8000/v1", prefer_adapter: str = "main_lora") -> str:
+    """Queries vLLM /v1/models endpoint to auto-detect the served model ID or adapter."""
+    url = f"{base_url.rstrip('/')}/models"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            ids = [m["id"] for m in data.get("data", [])]
+            if prefer_adapter and prefer_adapter in ids:
+                logger.info("Auto-detected policy adapter in vLLM: '%s'", prefer_adapter)
+                return prefer_adapter
+            model_id = ids[0]
+            logger.info("Auto-detected vLLM served model: '%s'", model_id)
+            return model_id
+    except Exception as e:
+        logger.warning("Could not auto-detect model from %s (%s). Using fallback.", url, e)
+        return "gemma-4-31b-it-qat-w4a16-ct"
+
+
 def safe_parse_json(text: str) -> Optional[Dict[str, Any]]:
     if "```json" in text:
         text = text.split("```json")[1].split("```")[0].strip()
@@ -92,16 +110,32 @@ def call_vllm_generate(
 
 
 def extract_patch_from_response(response_text: str) -> str:
-    """Extracts git diff patch or arguments from model output."""
+    """Extracts git diff patch or arguments from model output across all tool call formats."""
+    # 1. Look for unified diff code block
     match = re.search(r"```(?:diff|patch)?\n([\s\S]*?)```", response_text)
     if match:
         return match.group(1).strip()
-    # Check for tool_call edit_file/submit_patch payload
+    
+    # 2. Look for raw git diff in text
+    diff_match = re.search(r"(diff --git a/[\s\S]+)", response_text)
+    if diff_match:
+        return diff_match.group(1).strip()
+
+    # 3. Look for standard <tool_call> tags
     tool_match = re.search(r"<tool_call>([\s\S]*?)</tool_call>", response_text)
     if tool_match:
         parsed = safe_parse_json(tool_match.group(1))
         if parsed and "arguments" in parsed:
             return str(parsed["arguments"])
+
+    # 4. Look for native Gemma 4 tool call tokens
+    native_match = re.search(r"<\|tool_call\|>call:(?:edit_file|submit_patch)([\s\S]*?)(?:<\|tool_call\|>|<tool_call\|>|\n|$)", response_text)
+    if native_match:
+        parsed = safe_parse_json(native_match.group(1))
+        if parsed and "arguments" in parsed:
+            return str(parsed["arguments"])
+        return native_match.group(1).strip()
+
     return ""
 
 
@@ -225,17 +259,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Milestone 4: RFT Candidate Rollout Sampler.")
     parser.add_argument("--synthetic-tasks", type=Path, default=Path("data/synthetic_tasks/synthetic_tasks.jsonl"))
     parser.add_argument("--output-file", type=Path, default=Path("data/trajectories/rft_candidates.jsonl"))
-    parser.add_argument("--model-name", type=str, default="gemma-4-31b-it-qat-w4a16-ct")
+    parser.add_argument("--model-name", type=str, default="auto", help="Model ID or 'auto' to auto-detect from vLLM.")
     parser.add_argument("--n-tasks", type=int, default=50)
     parser.add_argument("--n-samples", type=int, default=4)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--vllm-url", type=str, default="http://127.0.0.1:8000/v1")
     args = parser.parse_args()
 
+    model_name = args.model_name
+    if model_name.lower() in ("auto", "none", ""):
+        model_name = auto_detect_vllm_model(args.vllm_url, prefer_adapter="main_lora")
+
     run_rft_sampling(
         synthetic_tasks_file=args.synthetic_tasks,
         output_file=args.output_file,
-        model_name=args.model_name,
+        model_name=model_name,
         n_tasks=args.n_tasks,
         n_samples_per_task=args.n_samples,
         workers=args.workers,
