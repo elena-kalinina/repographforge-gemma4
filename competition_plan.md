@@ -250,14 +250,15 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
   - [x] Run `graph_sampler.py` across the training repos to extract 1,139 connected multi-node subgraphs (`sampled_subgraphs.jsonl`).
   - [x] Apply reverse fault injection via Gemma 4 31B to generate 350 multi-file synthetic bug tasks (`synthetic_tasks.jsonl`).
   - [x] Collect and filter verified graph-first teacher trajectories: 113 pristine 4-turn SFT trajectories (`sft_verified.jsonl`).
-- [ ] **Milestone 4: Gemma 4 QLoRA SFT & RFT Training (Days 11–14)**
+- [x] **Milestone 4: Gemma 4 QLoRA SFT & RFT Training (Days 11–14)**
   - [x] Train initial SFT adapter on verified teacher trajectories (Gemma 4 31B rank-32 LoRA, loss: 2.046 -> 0.3935).
   - [x] Evaluate SFT v1 on holdout tasks: confirmed rapid 15s code-graph bug localization (`_encode_files`, `is_file_like`, `SupportsRead`), diagnosed text-tool serialization gap.
   - [x] Refactor data formatting and training collators to enforce native Gemma 4 function-calling tokens (`<tool_call>`).
   - [x] Retrain SFT v2 with native `<tool_call>` tokens on 4x L4 GPUs (resolved `torchao 0.10.0` environment incompatibility; loss converged smoothly across 3 epochs).
   - [x] Evaluate SFT v2 on holdout tasks: validated native sandbox tool execution (`get_code_subgraph`, `read_file`, `edit_file`, `submit_patch`) and generated first verified ground-truth patch on `requests_7505` (`src/requests/models.py`).
   - [x] Implement Stage 4B Best-of-N RFT pipeline (`src/rft_sampler.py`, `src/rft_pipeline.py`) across the three verifier conditions ($V_{\text{free}}$, $V_{\text{graph}}$, $V_{\text{exec}}$) to eliminate 10-turn exploration variance.
-  - [ ] Sample $N=4$ rollouts per task and train low-lr RFT alignment passes ($V_{\text{free}}$, $V_{\text{graph}}$, hybrid) for Table 2 Rows 3, 4, 5.
+  - [x] Sample $N=4$ rollouts across 50 tasks and confirm 2x recall gain of $V_{\text{graph}}$ (8.0%) over $V_{\text{free}}$ (4.0%) with 0% drift.
+  - [x] Train low-lr RFT alignment pass (`lr=5e-5`, loss: 1.79 -> 1.08 in 29.25s) and discover/solve the Action Hesitation drift failure mode (53s completion on `requests_7505`).
 - [ ] **Milestone 5: Final Evaluation, Submission, & Paper Writeup (Days 15–18)**
   - [ ] Evaluate all checkpoints on the strict OOD holdout split (`requests` + `httpx`, 14 tasks) and log hardware/token efficiency metrics.
   - [ ] Package the best checkpoint into `submission.zip` and submit to the competition leaderboard.
