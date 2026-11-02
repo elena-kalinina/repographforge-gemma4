@@ -143,13 +143,16 @@ def train_rft(
     model.print_trainable_parameters()
 
     # Low learning rate for gentle alignment
+    effective_grad_accum = min(2, max(1, len(tokenized_ds) // 2))
+    effective_epochs = max(2, num_epochs) if len(tokenized_ds) < 16 else num_epochs
+
     training_args = TrainingArguments(
         output_dir="/kaggle/working/rft_checkpoints",
         per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,  # Effective batch size = 8
+        gradient_accumulation_steps=effective_grad_accum,
         learning_rate=learning_rate,
-        num_train_epochs=num_epochs,
-        logging_steps=2,
+        num_train_epochs=effective_epochs,
+        logging_steps=1,
         save_strategy="no",
         bf16=True,
         lr_scheduler_type="cosine",
@@ -165,7 +168,8 @@ def train_rft(
         data_collator=DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8),
     )
 
-    logger.info("🚀 STARTING RFT ALIGNMENT (1 Epoch, lr=%g, %d steps)...", learning_rate, max(1, len(tokenized_ds) // 8))
+    total_steps = max(1, (len(tokenized_ds) // effective_grad_accum) * effective_epochs)
+    logger.info("🚀 STARTING RFT ALIGNMENT (%d Epochs, grad_accum=%d, lr=%g, ~%d steps)...", effective_epochs, effective_grad_accum, learning_rate, total_steps)
     trainer.train()
 
     # Export final aligned policy
