@@ -200,25 +200,85 @@ During verification and Rejection Fine-Tuning, candidate trajectories and patche
    \]
 3. **Deterministic Execution Oracle ($V_{\text{exec}}$):** Ground-truth execution of the official `test_patch` via `pytest` inside an isolated sandbox container (exit code $0 = \text{PASS}$, non-zero $= \text{FAIL}$).
 
-### 3.4 Two-Stage Parameter-Efficient Post-Training
+### 3.4 Two-Stage Parameter-Efficient Post-Training Architecture
 
-#### Stage 4A: Supervised Fine-Tuning (SFT) with Native Tool Tokens
-We adapt Gemma 4 31B using rank-32 Low-Rank Adaptation (LoRA) applied across all 410 linear projections in the text transformer backbone (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`). Crucially, we enforce native function-calling token formatting matching Gemma 4's tokenizer specification:
+The post-training pipeline of RepoGraphForge addresses a fundamental challenge in agentic reinforcement learning: **the exploration-capability duality**. A verifier or reward model—no matter how aligned—cannot reinforce a behavior that the underlying policy has zero probability of generating:
+\[
+\mathbb{P}_{\pi_\theta}(\text{cross-file jump} \mid \text{caller traceback}) \approx 0 \implies \nabla_\theta \mathcal{J}(\theta) = \mathbf{0}
+\]
+When an unadapted or single-file fine-tuned model encounters cross-file indirection (e.g., the symptom appears in caller `models.py`, but the predicate fix resides in imported utility `utils.py`), sampling rollouts under temperature $T > 0$ almost exclusively produces caller-file paging loops. Filtering such rollouts with $V_{\text{graph}}$ yields an empty set ($\emptyset$), rendering direct rejection fine-tuning or policy gradients ineffective.
+
+To overcome this, RepoGraphForge implements a strictly sequenced **two-stage post-training flywheel**:
+
+```
+Pre-trained Gemma 4 31B (Unadapted)
+              │
+              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Stage 4A: Multi-Hop Supervised Fine-Tuning (SFT)            │
+│ • Objective: Capability Induction                           │
+│ • Supervision: Verified multi-hop teacher trajectories      │
+│ • Teaches: Native <tool_call> tokens & cross-file jumping   │
+│ • Optimization: AdamW, lr=2e-4, cosine decay, 3 epochs      │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼
+                Policy Checkpoint π_SFT
+              (Capable of cross-file jumps)
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Stage 4B: GraphForge Rejection Fine-Tuning (RFT)           │
+│ • Objective: Variance Reduction & Path Shortening           │
+│ • Rollout Sampling: N=4 candidates per task @ T=0.7         │
+│ • Verifier Filter: GraphForge Evidence Rubric (V_graph)     │
+│ • Selection Curriculum: Shortest passing trajectory per task│
+│ • Alignment: Gentle pass, lr=5e-5, 1–2 epochs               │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼
+           Final RepoGraphForge Agent Policy π_RFT
+        (High resolution + zero action hesitation)
+```
+
+#### Stage 4A: Multi-Hop Supervised Fine-Tuning (Capability Induction)
+The goal of Stage 4A is to inject the structural syntax of tool execution and establish the multi-hop cross-file navigation reflex. We fine-tune Gemma 4 31B using rank-32 Low-Rank Adaptation (LoRA, $r=32, \alpha=64$) across all 410 linear projections of the text transformer backbone (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`).
+
+To eliminate the *Text-Tool Serialization Trap* identified in our pilot experiments, all teacher trajectories are compiled into native Gemma 4 chat-template function-calling tokens:
 ```text
 <start_of_turn>model
-<thought>Reasoning about caller/callee contracts...</thought>
-<|tool_call|>call:get_code_subgraph{"anchor_symbol": "module.func"}<|tool_call|><end_of_turn>
+<thought>Analyzing call graph: _encode_files delegates to is_file_like in utils.py.</thought>
+<|tool_call|>call:get_code_subgraph{"anchor_symbol": "requests.utils.is_file_like"}<|tool_call|><end_of_turn>
 <start_of_turn>tool
-{"nodes": [...], "edges": [...]}<end_of_turn>
+{"status": "ok", "nodes": ["requests.utils.is_file_like"], "file": "src/requests/utils.py", "line_span": [160, 185]}<end_of_turn>
+<start_of_turn>model
+<thought>Inspecting target predicate in utils.py rather than caller models.py.</thought>
+<|tool_call|>call:read_file{"filepath": "src/requests/utils.py", "start_line": 155, "end_line": 190}<|tool_call|><end_of_turn>
 ```
-Cross-entropy loss is computed exclusively on model thoughts, tool-call JSON arguments, and final git diffs, masking out environment responses.
-
-#### Stage 4B: Best-of-$N$ Rejection Fine-Tuning (RFT)
-To eliminate exploration variance, we sample $N=4$ rollouts per task at temperature $T=0.7$ from the SFT policy checkpoint $\pi_{\text{SFT}}$ across held-out synthetic tasks. Each rollout is scored under $V_{\text{graph}}$. For each task, we select the **shortest passing trajectory** (curriculum against context bloat):
+The cross-entropy loss is computed exclusively on assistant tokens, tool-call JSON arguments, and final unified diffs, masking out environment responses:
 \[
-\tau^* = \operatorname{arg\,min}_{\tau \in \{\tau_1, \dots, \tau_N\} \mid V_{\text{graph}}(\tau)=1} |\tau|
+\mathcal{L}_{\text{SFT}}(\theta) = -\sum_{t \in \mathcal{T}_{\text{assistant}}} \log \pi_\theta(y_t \mid y_{<t}, x)
 \]
-We perform a low-learning-rate alignment pass ($\text{lr} = 5 \times 10^{-5}$) for 1–2 epochs on these curated rollouts, locking in concise 3-to-4 turn navigation habits.
+We train for 3 full epochs with effective batch size $B=8$ ($1 \times 8$ gradient accumulation) at learning rate $\eta_{\text{SFT}} = 2 \times 10^{-4}$ with cosine annealing and warmup ratio $0.05$.
+
+#### Stage 4B: Graph-Anchored Rejection Fine-Tuning (Variance Reduction & Path Shortening)
+While SFT imparts the *capability* to navigate cross-file dependencies, greedy single-path inference at inference time retains substantial exploration variance: the model occasionally falls into secondary file reading or quote-escaping bash traps, burning its 10-to-15 tool-call budget.
+
+Stage 4B performs **variance reduction and path shortening** through multi-turn Rejection Fine-Tuning:
+1. **Rollout Generation:** For each held-out task $x_i$, we sample $N = 4$ independent trajectories from the SFT checkpoint under stochastic decoding ($T = 0.7$, $\text{top\_p} = 0.95$):
+   \[
+   \{\tau_{i, 1}, \tau_{i, 2}, \dots, \tau_{i, N}\} \sim \pi_{\text{SFT}}(\cdot \mid x_i)
+   \]
+2. **Contract-Guided Verification:** Each rollout is scored under the GraphForge Evidence Rubric:
+   \[
+   v_{i, j} = V_{\text{graph}}(\tau_{i, j}, R_{G, i}) \in \{0, 1\}
+   \]
+3. **Shortest-Path Selection Curriculum:** Among the passing trajectories, we select the trajectory with the minimum token length:
+   \[
+   \tau^*_i = \operatorname{arg\,min}_{\tau_{i, j} \mid v_{i, j} = 1} |\tau_{i, j}|
+   \]
+   By prioritizing shorter passing trajectories, the curriculum heavily penalizes wandering and reinforces rapid 3-to-4 turn completions (`get_code_subgraph` $\rightarrow$ `read_file` $\rightarrow$ `edit_file` $\rightarrow$ `submit_patch`).
+4. **Gentle Alignment Pass:** We fine-tune the SFT adapter weights on the curated Best-of-$N$ trajectories using a reduced learning rate ($\eta_{\text{RFT}} = 5 \times 10^{-5}$, exactly one-fourth of the SFT rate) for 1–2 epochs. This low learning rate gently reinforces the winning navigation paths without causing catastrophic forgetting of the broad code knowledge acquired during SFT.
 
 ---
 
