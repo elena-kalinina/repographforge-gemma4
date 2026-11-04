@@ -176,11 +176,18 @@ Compare five model variants on the held-out `encode/httpx` repository split and 
 | **4. Gemma 4 + SFT + RFT ($V_{\text{graph}}$ filtered)** | `[Run Exp]` | `[Run Exp]` | `[Run Exp]` | `[Run Exp]` | `[Run Exp]` |
 | **5. Gemma 4 + SFT + RFT ($V_{\text{exec}} + V_{\text{graph}}$)** | `[Run Exp]` | `[Run Exp]` | `[Run Exp]` | `[Run Exp]` | `[Run Exp]` |
 
-#### Experiment 3: Edge Hardware & Graph Tool Efficiency Ablation
+#### Experiment 3: Edge Hardware, Model Scale Hierarchy & System Profiling (Table 3)
 
-Because the competition emphasizes **offline agents on everyday developer hardware**, include a systems profiling table comparing agent behavior with and without the competition's graph tools (`get_code_neighbors` / `get_code_subgraph`):
+Because the competition emphasizes **offline agents on everyday developer hardware**, evaluate deployment feasibility and scaling across the official Gemma 4 model hierarchy:
 
-* **Metrics to Log:** Peak VRAM (GB), Time-to-First-Patch (seconds), Total Input Tokens per Trajectory, and Localization Recall@3 (whether the agent finds the ground-truth modified file within its first 3 tool calls).
+* **Evaluated Architectures:** `gemma-4-31b-it-qat-w4a16-ct`, `gemma-4-12b-it-qat-w4a16-ct`, `gemma-4-e4b-it-qat-w4a16-ct`, `gemma-4-e2b-it-qat-w4a16-ct`.
+* **Hardware Profiles:**
+  - **Cluster Tier (4x NVIDIA L4, 96 GB VRAM):** Serves 31B ($tp=4$).
+  - **Workstation Tier (Single RTX 4090 / 16 GB VRAM):** Serves 12B ($tp=1$).
+  - **Developer Laptop Tier (Apple Silicon / 16 GB RAM / 8 GB VRAM):** Serves E4B.
+  - **Edge Tier (8 GB RAM / 4 GB VRAM):** Serves E2B.
+* **Metrics to Log:** Peak VRAM (GB), Generation Throughput (tok/sec), Average Context Tokens per Turn, Time-to-First-Patch (seconds), and Localization Recall@1.
+* **Core Paper Claim to Validate ($H_4$):** Demonstrating that parameter-efficient fine-tuning on graph trajectories enables a 12B (or E4B) agent to surpass the zero-shot capabilities of the unadapted 31B flagship base model while reducing memory footprints by over 60% and latency by $>2\times$.
 
 ---
 
@@ -261,9 +268,10 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
   - [x] Train low-lr RFT alignment pass (`lr=5e-5`, loss: 1.79 -> 1.08 in 29.25s) and discover/solve the Action Hesitation drift failure mode (53s completion on `requests_7505`).
   - [x] Package initial RFT agent into `submission.zip` and submit to Kaggle competition scoring queue.
 - [ ] **Milestone 5: Scaling from Pilot to Full Research Benchmark & Paper Submission (Days 15–18)**
-  - [x] Draft publication-ready research paper manuscript (`paper/manuscript.md`) formalizing $RQ_1, RQ_2, RQ_3$ and hypotheses $H_1, H_2, H_3$.
+  - [x] Draft publication-ready research paper manuscript (`paper/manuscript.md`) formalizing $RQ_1, RQ_2, RQ_3, RQ_4$ and hypotheses $H_1, H_2, H_3, H_4$.
+  - [x] Execute full 14-task holdout sweep on $D_{\text{val-ood}}$: achieved 85.7% patch submission rate (12/14 tasks patched) and generated automated failure taxonomy audit.
   - [ ] Scale multi-hop teacher trajectories from 113 to 400–600 samples (`sft_scaled.jsonl`) focusing on cross-file indirection (`models.py` -> `utils.py`).
   - [ ] Retrain Gemma 4 31B SFT + RFT on the scaled multi-hop dataset.
-  - [ ] Evaluate scaled checkpoints across the full 14-task out-of-distribution holdout suite (`requests` + `httpx`) to complete Table 2.
+  - [ ] Multi-Scale Model Benchmark: Profile and evaluate Gemma 4 12B, E4B, and E2B on holdout tasks to populate Table 3 (Edge Hardware & VRAM Profiling).
   - [ ] Package final scaled agent into `submission.zip` for final leaderboard submission.
-  - [ ] Finalize `paper/manuscript.md` with final Table 2 metrics and submit to the Kaggle Paper Track before the November 12 deadline.
+  - [ ] Finalize `paper/manuscript.md` with final Table 2 & Table 3 metrics and submit to the Kaggle Paper Track before the November 12 deadline.
