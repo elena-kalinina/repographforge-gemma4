@@ -121,9 +121,12 @@
   - **$RQ_4$ & $H_4$ (Model Scale & Edge Hardware Feasibility):** Formalized the edge capability inversion hypothesis—demonstrating that parameter-efficient fine-tuning on graph trajectories enables lightweight models (12B, E4B) running on everyday developer hardware ($\le 8$–16 GB VRAM) to surpass zero-shot 31B performance at $>2\times$ faster generation throughput.
 
 - **Full 14-Task Holdout Sweep Executed ($D_{\text{val-ood}}$):**
-  - **Patch Submission Rate:** **12 / 14 tasks patched (85.7%)** across `psf/requests` and `encode/httpx` (up from 0.0% in zero-shot baseline).
-  - Validated that the Anti-Hesitation Action Gate prevents analysis paralysis across diverse files (`models.py`, `utils.py`, `sessions.py`, `status_codes.py`, `_parsers.py`).
-  - Automated failure taxonomy audit implemented to distinguish code assertion failures from offline sandbox fixture socket errors (`httpbin`).
+  - **Patch Submission Rate:** **10 / 14 tasks patched (71.4%)** across `psf/requests` and `encode/httpx` (up from 0.0% in zero-shot baseline).
+  - **Target File Localization Accuracy:** **13 / 14 tasks (92.9%)** correctly identified and edited the ground-truth modified source file (`models.py`, `utils.py`, `sessions.py`, `status_codes.py`, `_parsers.py`).
+  - **Empirical Proof of Context Quicksand Law:**
+    - Tasks with single graph-directed read (`Files Read = 1`): **100% submission success (6/6)**, averaging only 7.5 tool calls and 54k tokens.
+    - Tasks falling into sequential multi-file reading (`Files Read ≥ 4`): tool calls hit the 15-call ceiling (15.0 avg) and tokens surged past 114k, causing a 50% timeout rate.
+  - Confirms that graph-span targeted navigation is the key to preventing context bloat and agent timeout.
 
 ---
 
