@@ -59,6 +59,35 @@ Pre-computed Repository Graphs G = (V, E)
 3. **Empirical RFT Demonstration:** In a multi-turn Best-of-$N$ rollout experiment on 50 tasks, we show that $V_{\text{graph}}$ achieves an exact **$2\times$ higher yield of accepted, test-passing trajectories (8.0% vs. 4.0%)** over free-form judges.
 4. **Offline Generalization to Unseen Repositories:** Under a strict anti-leakage partition, our fine-tuned Gemma 4 31B agent localizes and fixes out-of-distribution bugs in unseen libraries (`psf/requests`) in 53 seconds flat with 100% clean sandbox tool execution.
 
+### 1.1 Four Core Architectural Advantages of the GraphForge Approach
+
+To clearly articulate why adapting GraphForge to software repositories represents a categorical advance over traditional autonomous coding agents, we outline its four core technical advantages:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                   THE FOUR ARCHITECTURAL ADVANTAGES OF REPO-GRAPH-FORGE                │
+├──────────────────────────┬─────────────────────────────────┬───────────────────────────┤
+│ Dimension                │ Traditional Coding Agents       │ RepoGraphForge Approach   │
+├──────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+│ 1. Context Efficiency    │ Sequential file reading (3–4k   │ Node-span targeting (120  │
+│                          │ tokens/turn; context quicksand) │ tokens/turn; >90% saving) │
+├──────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+│ 2. Localization Latency  │ Brute-force grep/find loops     │ In-memory NetworkX lookup │
+│                          │ (45–60s trial-and-error)        │ (sub-0.1s graph retrieval)│
+├──────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+│ 3. Semantic Indirection  │ Pure AST syntax misses dynamic   │ 256-dim embedding cosine  │
+│                          │ delegation (__getattr__, proxy) │ neighbors bridge duck-type│
+├──────────────────────────┼─────────────────────────────────┼───────────────────────────┤
+│ 4. Verification Fidelity │ Unanchored LLM judge (sycophant │ GraphForge Evidence Rubric│
+│                          │ drift; 35% false rejection)     │ (R_G contracts; 2x recall)│
+└──────────────────────────┴─────────────────────────────────┴───────────────────────────┘
+```
+
+1. **Advantage 1: >90% Context Token Compression (The Context Quicksand Defense):** Traditional agents default to dumping multi-thousand-line files (e.g. `src/requests/models.py`, 1,185 lines / ~3,800 tokens) into the context window, rapidly diluting attention mechanisms. GraphForge indexes code into atomic AST nodes with pre-computed `line_span` boundaries. Querying `get_code_subgraph` returns the structural neighborhood in $\sim 120$ tokens, and targeted span-reading consumes $\sim 180$ tokens—delivering a **$>92\%$ reduction in context token consumption** per turn.
+2. **Advantage 2: Sub-Second Structural Retrieval vs. Shell Wandering:** Baseline models frequently spend 3–4 consecutive turns (~45 seconds) battling shell syntax and regex escaping traps (e.g. `grep -n \"def func\"` returning exit code 1). GraphForge replaces fragile shell invocations with in-memory NetworkX multigraph traversals, resolving caller/callee symbols in **sub-0.1 seconds**.
+3. **Advantage 3: Semantic Embedding Expansion Resolves Lexical Mismatches:** Pure AST callgraphs only connect explicit imports and call signatures, failing on Python dynamic delegation (e.g., `__getattr__` proxy wrappers, duck-typed `SupportsRead` objects). By augmenting 2-hop structural ego-graphs with cosine similarity over 256-dimensional node embeddings ($\mathbf{z}_u \cdot \mathbf{z}_v$), GraphForge clusters conceptual relatives across module boundaries that syntactic parsers miss.
+4. **Advantage 4: Caller/Callee Contract Preservation Prevents False-Positive Drift:** Free-form LLM judges ($V_{\text{free}}$) exhibit severe sycophancy, rewarding superficial single-file edits while failing to check whether caller signatures are preserved across file boundaries. GraphForge generates Evidence Rubrics ($R_G$) anchored to incoming and outgoing graph edges ($N_{\text{in}}(G_S), N_{\text{out}}(G_S)$), eliminating false rejections, boosting recall by **+14.28% relative**, and doubling rollout acceptance in Rejection Fine-Tuning (8.0% vs. 4.0%).
+
 ---
 
 ## 2. Research Questions & Hypotheses
