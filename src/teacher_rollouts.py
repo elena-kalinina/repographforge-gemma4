@@ -30,7 +30,8 @@ logger = logging.getLogger("teacher_rollouts")
 
 TEACHER_SYSTEM_PROMPT = (
     "You are an expert autonomous software engineer solving a real repository issue. "
-    "Equipped with code-graph tools, you follow a strict graph-first navigation workflow. "
+    "Equipped with code-graph tools, you follow a strict graph-first navigation workflow, "
+    "especially across multi-file dependencies and cross-module caller/callee contracts. "
     "Output strictly valid JSON with keys: 'synthetic_id', 'messages'."
 )
 
@@ -89,8 +90,9 @@ def generate_teacher_trajectory(
         f"### Reference Fix Patch:\n{patch}\n\n"
         f"Trajectory Guidelines:\n"
         f"- Turn 1: Model calls get_code_subgraph on '{anchor}' to inspect caller/callee contracts.\n"
-        f"- Turn 2: Model receives subgraph and calls read_file on target span.\n"
-        f"- Turn 3: Model applies contract-satisfying fix via edit_file.\n"
+        f"- Turn 2 (Multi-Hop Cross-File): If the anchor calls an imported helper, predicate, or contract in another file, "
+        f"model MUST inspect that connected target file/span directly via read_file or get_code_subgraph rather than scanning caller files.\n"
+        f"- Turn 3: Model applies the minimal, contract-satisfying fix via edit_file on the exact target file.\n"
         f"- Turn 4: Model confirms verification and calls submit_patch.\n\n"
         f"Format strictly as JSON: {{\"synthetic_id\": \"{syn_id}\", \"messages\": [...]}}"
     )
@@ -122,21 +124,47 @@ def generate_teacher_trajectory(
                     msgs = parsed.get("messages", [])
                     # Quality gate: must have at least 4 turns and valid user/assistant messages
                     if msgs and len(msgs) >= 4:
-                        # Render native Gemma turn and tool_call tags
+                        normalized_msgs = []
                         turns = []
                         for m in msgs:
                             role = "model" if m.get("role") in ("assistant", "model") else m.get("role", "user")
-                            content = m.get("content", "")
-                            if "tool_calls" in m and m["tool_calls"]:
-                                for tc in m["tool_calls"]:
+                            content = m.get("content", "") or ""
+                            tcs = m.get("tool_calls", [])
+                            norm_tcs = []
+                            if tcs and isinstance(tcs, list):
+                                for idx, tc in enumerate(tcs):
                                     fn = tc.get("function", {}) if isinstance(tc, dict) else {}
-                                    content += f"\n<tool_call>\n{json.dumps({'name': fn.get('name', ''), 'arguments': fn.get('arguments', {})})}\n</tool_call>"
-                            turns.append(f"<|turn|>{role}\n{content.strip()}<turn|>")
+                                    args = fn.get("arguments", {})
+                                    if isinstance(args, dict):
+                                        args = json.dumps(args)
+                                    norm_tcs.append({
+                                        "id": tc.get("id", f"call_{idx}"),
+                                        "type": "function",
+                                        "function": {
+                                            "name": fn.get("name", ""),
+                                            "arguments": str(args),
+                                        },
+                                    })
+                            norm_msg = {"role": role, "content": content}
+                            if norm_tcs:
+                                norm_msg["tool_calls"] = norm_tcs
+                            normalized_msgs.append(norm_msg)
+
+                            # Native Gemma 4 token representation
+                            call_tokens = ""
+                            if norm_tcs:
+                                call_tokens = "".join(
+                                    f"<|tool_call|>call:{tc['function']['name']}{tc['function']['arguments']}<|tool_call|>"
+                                    for tc in norm_tcs
+                                )
+                            turn_body = f"{content}\n{call_tokens}".strip() if call_tokens else content
+                            turns.append(f"<start_of_turn>{role}\n{turn_body}<end_of_turn>")
+
                         text_representation = "\n".join(turns)
                         return {
                             "synthetic_id": syn_id,
                             "anchor_node": anchor,
-                            "messages": msgs,
+                            "messages": normalized_msgs,
                             "text": text_representation,
                         }
         except Exception as e:
@@ -222,11 +250,11 @@ def main() -> None:
     parser.add_argument(
         "--output-file",
         type=Path,
-        default=Path("data/trajectories/sft_verified.jsonl"),
+        default=Path("data/trajectories/sft_scaled.jsonl"),
         help="Path to save admitted SFT trajectories.",
     )
     parser.add_argument("--model-name", type=str, default=None, help="Model name (auto-detected from vLLM if None)")
-    parser.add_argument("--target-count", type=int, default=150, help="Number of trajectories to collect")
+    parser.add_argument("--target-count", type=int, default=400, help="Number of trajectories to collect")
     parser.add_argument("--workers", type=int, default=4, help="Number of concurrent worker threads")
     parser.add_argument("--vllm-url", type=str, default="http://127.0.0.1:8000/v1")
     args = parser.parse_args()
