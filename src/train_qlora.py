@@ -135,26 +135,37 @@ def train(
         if messages:
             standardized = []
             for m in messages:
-                role = "model" if m.get("role") in ("assistant", "model") else m.get("role", "user")
-                content = m.get("content", "")
-                if "tool_calls" in m and m["tool_calls"]:
-                    tcs = m["tool_calls"]
-                    # Render native Gemma 4 tool call tags instead of serializing into plain content text
-                    rendered_calls = []
-                    if isinstance(tcs, list):
-                        for tc in tcs:
-                            fn = tc.get("function", {}) if isinstance(tc, dict) else {}
-                            call_dict = {"name": fn.get("name", ""), "arguments": fn.get("arguments", {})}
-                            rendered_calls.append(f"<tool_call>\n{json.dumps(call_dict)}\n</tool_call>")
-                    else:
-                        rendered_calls.append(f"<tool_call>\n{tcs}\n</tool_call>")
-                    calls_str = "\n".join(rendered_calls)
-                    content = f"{content}\n{calls_str}".strip() if content else calls_str
-                standardized.append({"role": role, "content": content})
+                role = "assistant" if m.get("role") in ("assistant", "model") else m.get("role", "user")
+                content = m.get("content", "") or ""
+                msg = {"role": role, "content": content}
+                
+                tcs = m.get("tool_calls")
+                if tcs and isinstance(tcs, list):
+                    norm_tcs = []
+                    for idx, tc in enumerate(tcs):
+                        if isinstance(tc, dict):
+                            fn = tc.get("function", {})
+                            name = fn.get("name") or tc.get("name", "")
+                            args = fn.get("arguments") or tc.get("arguments", {})
+                            if isinstance(args, dict):
+                                args = json.dumps(args)
+                            norm_tcs.append({
+                                "id": tc.get("id", f"call_{idx}"),
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "arguments": str(args),
+                                },
+                            })
+                    if norm_tcs:
+                        msg["tool_calls"] = norm_tcs
+                standardized.append(msg)
+
             try:
                 text = tokenizer.apply_chat_template(standardized, tokenize=False)
-            except Exception:
-                text = "\n".join(f"<|turn|>{m['role']}\n{m['content']}<turn|>" for m in standardized)
+            except Exception as e:
+                logger.warning("apply_chat_template failed: %s. Using fallback.", e)
+                text = example.get("text", "")
         else:
             text = example.get("text", "")
 
