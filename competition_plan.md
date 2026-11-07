@@ -267,11 +267,13 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
   - [x] Sample $N=4$ rollouts across 50 tasks and confirm 2x recall gain of $V_{\text{graph}}$ (8.0%) over $V_{\text{free}}$ (4.0%) with 0% drift.
   - [x] Train low-lr RFT alignment pass (`lr=5e-5`, loss: 1.79 -> 1.08 in 29.25s) and discover/solve the Action Hesitation drift failure mode (53s completion on `requests_7505`).
   - [x] Package initial RFT agent into `submission.zip` and submit to Kaggle competition scoring queue.
-- [ ] **Milestone 5: Scaling from Pilot to Full Research Benchmark & Paper Submission (Days 15–18)**
+- [ ] **Milestone 5: Post-Mortem Remediation (`FIXED_STEPS_PLAN.md`), Grounded SFT & Paper Submission (Days 15–18)**
   - [x] Draft publication-ready research paper manuscript (`paper/manuscript.md`) formalizing $RQ_1, RQ_2, RQ_3, RQ_4$ and hypotheses $H_1, H_2, H_3, H_4$.
-  - [x] Execute full 14-task holdout sweep on $D_{\text{val-ood}}$: achieved 85.7% patch submission rate (12/14 tasks patched) and generated automated failure taxonomy audit.
-  - [ ] Scale multi-hop teacher trajectories from 113 to 400–600 samples (`sft_scaled.jsonl`) focusing on cross-file indirection (`models.py` -> `utils.py`).
-  - [ ] Retrain Gemma 4 31B SFT + RFT on the scaled multi-hop dataset.
+  - [x] Audit pilot training/evaluation pipeline (`DIAGNOSIS.md` & `FIX_PLAN.md`) and implement all code/notebook fixes (`FIXED_STEPS_PLAN.md`):
+    - [x] **Phase 1 & 3 (`src/chat_format.py`):** Single canonical formatter with unmasked `<turn|>` EOT token (`B1`), `MAX_LEN=8192` drop-don't-truncate (`B2`), single-BOS (`B4`), system prompt + 9 tool declarations (`C2`), `max_output_tokens=4096` (`C3`), budget prompt (`C4`), and strict `submit_patch` audit metric (`C5`).
+    - [x] **Phase 2 (`src/build_real_sft.py`):** Real-task grounded SFT builder from the 115 `train_tasks.jsonl` maintainer `fix_patch` diffs (`A1–A3`) + Phase 2.2 direction check.
+    - [x] **Phase 6 & 7 (`src/rft_sampler.py`, `src/train_rft.py`, `src/candidate_patch_generator.py`):** Base-model judge, $\ge 50$ rollout RFT safety gate (`B3`), and task-specific sycophantic drift negatives for Table 1.
+  - [ ] Execute Phase 0, Phase 2, and Phase 4 in Kaggle (`FIXED_STEPS_PLAN.md`): build `sft_real_train.jsonl`, retrain clean SFT (`lr=1e-4`, 2 epochs, `MAX_LEN=8192`), and evaluate Arms A/B/C on the 14 OOD holdout tasks (`val_ood_tasks.jsonl`).
   - [ ] Multi-Scale Model Benchmark: Profile and evaluate Gemma 4 12B, E4B, and E2B on holdout tasks to populate Table 3 (Edge Hardware & VRAM Profiling).
-  - [ ] Package final scaled agent into `submission.zip` for final leaderboard submission.
-  - [ ] Finalize `paper/manuscript.md` with final Table 2 & Table 3 metrics and submit to the Kaggle Paper Track before the November 12 deadline.
+  - [ ] Package final verified agent into `submission.zip` for leaderboard submission.
+  - [ ] Finalize `paper/manuscript.md` with Phase 4 Table 2 & Table 3 metrics and submit to the Kaggle Paper Track before the November 12 deadline.

@@ -54,10 +54,10 @@ Pre-computed Repository Graphs G = (V, E)
 ```
 
 ### Summary of Contributions
-1. **Evidence-Anchored Verification at Repository Scale:** We formalize GraphForge structural rubrics ($R_G$) for code repositories, evaluating 386 candidate patches and proving that anchoring LLM judges to graph dependency contracts boosts recall by **+14.28% relative** and achieves substantial agreement ($\kappa = 0.7051$) with ground-truth unit tests.
-2. **The Text-Tool Serialization & Action Hesitation Findings:** We identify and document two critical behavioral failure modes in coding agent post-training—the *Text-Tool Serialization Trap* and *Action Hesitation Drift*—and present structural token formatting and the *Anti-Hesitation Action Gate* to overcome them.
-3. **Empirical RFT Demonstration:** In a multi-turn Best-of-$N$ rollout experiment on 50 tasks, we show that $V_{\text{graph}}$ achieves an exact **$2\times$ higher yield of accepted, test-passing trajectories (8.0% vs. 4.0%)** over free-form judges.
-4. **Offline Generalization to Unseen Repositories:** Under a strict anti-leakage partition, our fine-tuned Gemma 4 31B agent localizes and fixes out-of-distribution bugs in unseen libraries (`psf/requests`) in 53 seconds flat with 100% clean sandbox tool execution.
+1. **Evidence-Anchored Verification at Repository Scale:** We formalize GraphForge structural rubrics ($R_G$) for code repositories, evaluating 386 candidate patches (stratified across partial contract omissions and task-specific sycophantic drift mutations) and demonstrating that anchoring LLM judges to graph dependency contracts boosts recall by **+14.28% relative** and achieves substantial agreement ($\kappa = 0.7051$) with ground-truth unit tests.
+2. **End-of-Turn (EOT) Loss Masking & Label Direction Ablation:** We identify and formally analyze three critical post-training failure modes in tool-calling coding agents—(a) *End-of-Turn (`<turn|>`) Loss Masking*, which silently prevents turn termination and causes run-on generation up to `max_output_tokens`, (b) *Reverse-Mutation Label Inversion* ($\Delta_{\text{bug}}$ vs. $\Delta_{\text{gold}}$), and (c) *RFT Markdown-Fence Drift*—and provide a single canonical formatting and verification gate (`src/chat_format.py`) to eliminate them.
+3. **Real-Task Grounded Trajectory Construction vs. Synthetic Screenplays:** We pair 115 ground-truth maintainer fixes (`train_tasks.jsonl`) with code-graph neighborhoods and exact hunk spans (`src/build_real_sft.py`) alongside reverse-mutated synthetic tasks, ensuring `read_file` observations and `edit_file` replacements are 100% grounded in real repository code.
+4. **Offline Generalization to Unseen Repositories:** Under a strict anti-leakage partition (`psf/requests` and `encode/httpx`), our fine-tuned Gemma 4 31B agent localizes, edits, and resolves out-of-distribution repository defects completely offline (including a 3-tool-call, 18.9s `pytest`-verified resolution on `requests_6644` and an exact maintainer-equivalent fix on `requests_7433`).
 
 ### 1.1 Four Core Architectural Advantages of the GraphForge Approach
 
@@ -320,38 +320,44 @@ Cohen's Kappa (Inter-Rater Reliability):
   V_graph:  [██████████████████░░░░░░] 0.7051 (Substantial Agreement > 0.70)
 ```
 
-#### Analytical Takeaways:
+#### Analytical Takeaways & Stratified Negative Analysis:
 1. **Elimination of False Rejection:** The unanchored judge ($V_{\text{free}}$) suffered from severe skepticism on legitimate, complex diffs, falsely rejecting more than a third of working gold fixes (Recall = 0.6512). By anchoring evaluation to explicit contract criteria, $V_{\text{graph}}$ increased recall to **0.7442** (+9.3 percentage points / +14.28% relative).
 2. **Substantial Inter-Rater Reliability:** $V_{\text{graph}}$ raised Cohen's $\kappa$ from 0.6401 to **0.7051**, crossing the formal psychometric threshold into "substantial agreement" ($>0.70$) with deterministic test execution.
+3. **Stratification by Negative Class & Judge Independence:** In our initial pilot benchmark, the `sycophantic_drift` negative class used a constant 3-line template across tasks, making a third of the negative pool trivially separable. In `src/candidate_patch_generator.py` and Data Preparation Cell 4/5, we upgrade the negative suite to construct *task-specific* sycophantic drift patches targeting the actual file and hunk lines of each task, and evaluate verifiers using the uncontaminated **base** Gemma 4 31B model (rather than the fine-tuned `main_lora` adapter) with false-positive rates reported separately for `partial_contract_omission` and `sycophantic_drift`.
 
 ---
 
-### 5.2 Experiment 2: Best-of-$N$ Rejection Fine-Tuning Filter Yield
-In Stage 4B, we sampled 200 multi-turn candidate rollouts ($N=4$ across 50 held-out synthetic tasks) using the fine-tuned Gemma 4 31B policy. Each rollout was independently evaluated under $V_{\text{free}}$, $V_{\text{graph}}$, and deterministic execution heuristics ($V_{\text{exec}}$).
+### 5.2 Experiment 2: Best-of-$N$ Rejection Fine-Tuning Filter Yield & Failure Analysis
+In our Stage 4B pilot, we sampled 200 multi-turn candidate rollouts ($N=4$ across 50 synthetic tasks). Each rollout was evaluated under $V_{\text{free}}$, $V_{\text{graph}}$, and structural execution checks:
 
-| Verifier Filter Condition | Accepted Tasks ($N=4$) | Task Acceptance Rate (%) | Executable Test Alignment |
+| Verifier Filter Condition | Accepted Tasks ($N=4$) | Task Acceptance Rate (%) | Structural Diff Validity |
 | :--- | :---: | :---: | :---: |
 | **Condition A: Unanchored Judge ($V_{\text{free}}$)** | 2 / 50 | 4.0% | 100% |
 | **Condition B: GraphForge Rubric ($V_{\text{graph}}$)** | **4 / 50** | **8.0%** | **100%** |
-| **Condition C: Hybrid Oracle ($V_{\text{graph}} + V_{\text{exec}}$)** | **4 / 50** | **8.0%** | **100%** |
+| **Condition C: Hybrid Filter ($V_{\text{graph}} + \text{Tool Check}$)** | **4 / 50** | **8.0%** | **100%** |
 
-#### Analytical Takeaways:
-* **$2\times$ Yield Improvement:** In multi-turn rollout selection, $V_{\text{graph}}$ accepted **exactly twice as many tasks as $V_{\text{free}}$** (8.0% vs. 4.0%).
-* **Zero Reward Hacking:** Every trajectory approved by $V_{\text{graph}}$ also satisfied the execution heuristic ($V_{\text{exec}}$), confirming that structural code-graph contracts provide a high-yield filter without admitting sycophantic hallucinations.
+#### Critical Post-Training Ablation: Why Pilot RFT Regressed Tool Calling (And How We Fixed It)
+While $V_{\text{graph}}$ doubled the acceptance yield over $V_{\text{free}}$ (8.0% vs. 4.0%), our post-mortem audit (`DIAGNOSIS.md`) uncovered three critical pitfalls when applying RFT to tool-using coding agents:
+1. **The Markdown-Fence Extraction Trap:** Extracting patches via regex (` ```diff `) during RFT filtering selects *against* native `edit_file` tool invocations, training the model to answer in conversational prose (which reduced holdout patch submissions from 4/14 to 1/14). Our corrected `src/rft_sampler.py` extracts diffs directly from `edit_file(filepath, old_string, new_string)` tool arguments.
+2. **Minimum Sample Floor ($\ge 50$ Trajectories):** Fine-tuning a rank-32 LoRA adapter on only 4 accepted trajectories overwrites SFT capabilities with high-variance noise. `src/train_rft.py` now enforces a hard floor of $\ge 50$ accepted tool-calling trajectories before executing the RFT pass.
+3. **Uncontaminated Base Judge:** RFT filtering must query the unadapted **base** model as judge (`gemma-4-31b-it-qat-w4a16-ct`), never the policy adapter (`main_lora`) grading its own rollouts.
 
 ---
 
-### 5.3 Experiment 3: Out-of-Distribution Agent Benchmark (Table 2)
-We evaluated the progression of agent capabilities across our fine-tuning stages on the strict out-of-distribution holdout benchmark ($D_{\text{val-ood}}$: 14 unseen tasks across `psf/requests` and `encode/httpx`) as well as the official blind **Kaggle Public Leaderboard** (~60 hidden private tasks).
+### 5.3 Experiment 3: Out-of-Distribution Agent Benchmark & Post-Training Ablation (Table 2)
+We evaluated the progression of agent capabilities across our fine-tuning stages on the strict out-of-distribution holdout benchmark ($D_{\text{val-ood}}$: 14 unseen tasks across `psf/requests` and `encode/httpx`) as well as the official blind **Kaggle Public Leaderboard**.
 
-| Model Policy Variant | Public Leaderboard (Score) | Valid Patch Submitted (%) | Target File Localized (%) | Avg. Tool Calls | Avg. Context Tokens | Primary Failure Mode |
-| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **1. Zero-Shot Gemma 4 12B Base** | 0.00 | 0.0% (0/14) | 14.3% (2/14) | 10.0 | 28,500 | Blind grep / timeout |
-| **2. Zero-Shot Gemma 4 31B Base** | 0.00 | 0.0% (0/14) | 21.4% (3/14) | 10.0 | 31,200 | Trial-and-error shell searching |
-| **3. Gemma 4 31B + SFT v1 (Text-Tool)** | 0.00 | 0.0% (0/14) | 71.4% (10/14) | 0.0 | 18,200 | Text-tool serialization trap |
-| **4. Gemma 4 31B + Scaled SFT (No RFT)** | **0.01** | 50.0% (7/14) | 85.7% (12/14) | 12.8 | 104,200 | Exploration variance & budget exhaustion |
-| **5. Gemma 4 31B + RepoGraphForge Pilot (SFT+RFT)** | **0.03** | **71.4%** (10/14) | **92.9%** (13/14) | **11.3** | **87,598** | Context paging on multi-file reads |
-| **6. Gemma 4 31B + RepoGraphForge Scaled (SFT+RFT)** | *[Active Submission]* | **85.7%** (12/14) | **92.9%** (13/14) | **8.2** | **54,400** | *Targeting Peak Resolution* |
+*(Methodological Note on Audit Metrics: Early diagnostic scripts counted any zero-argument tool call `args == {}`—such as `get_status()`—as a patch submission, inflating apparent submission rates to 71.4%–85.7%. Table 2 below reports both the legacy trace count and the strict `name == "submit_patch"` non-empty diff rate, alongside deterministic `pytest` resolution.)*
+
+| Model Policy Variant | Public Leaderboard | Strict Non-Empty Patch Submitted | Pytest Resolved (`exit_code=0`) | Target File Localized (%) | Primary Failure Mode / Ablation Finding |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **1. Zero-Shot Gemma 4 12B Base** | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 14.3% (2/14) | Blind grep / timeout |
+| **2. Zero-Shot Gemma 4 31B Base** | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 21.4% (3/14) | Trial-and-error shell searching |
+| **3. Gemma 4 31B + SFT v1 (Unmasked EOT Bug)** | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 71.4% (10/14) | Masked `<turn\|>` stop token + stringified tool args |
+| **4. Gemma 4 31B + Pilot SFT+RFT (Run 1)** | **0.03** | **10/14** *(legacy audit)* | **7.1%** (1/14: `requests_6644`) | **92.9%** (13/14) | `MAX_LEN=1536` truncation & offline `httpbin` socket |
+| **5. Gemma 4 31B + Scaled SFT (Run 2, No RFT)** | **0.01** | **28.6%** (4/14 valid diffs) | **7.1%** (1/14: `requests_6644`) | 85.7% (12/14) | Unmasked `<\|turn>user` header -> conversational timeouts |
+| **6. Gemma 4 31B + Unmasked 4-Sample RFT (Run 3)** | — | 7.1% (1/14: `requests_6589`) | 0.0% (0/14) | — | RFT regex selected markdown fences over tool calls |
+| **7. Gemma 4 31B + Grounded SFT (`chat_format.py`)** | *[Phase 4 Eval]* | *[3-Arm Eval A/B/C]* | *[3-Arm Eval A/B/C]* | *[Target >90%]* | Fixes B1–B5, A1–A3, C1–C5 (`MAX_LEN=8192`, EOT unmasked) |
 
 ```
 Official Kaggle Leaderboard Score Comparison:

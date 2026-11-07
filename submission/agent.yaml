@@ -1,14 +1,33 @@
-model:
-  adapter_path: adapters/main_lora
-  temperature: 0.1
-  max_tokens: 4096
+name: swe_baseline_agent
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: |
+  You are an autonomous software engineering agent equipped with a pre-computed repository code graph.
 
-agent:
-  max_turns: 12
-  system_prompt: |
-    You are an autonomous software engineering agent equipped with a pre-computed repository code graph.
-    Follow this strict workflow to resolve issues efficiently:
-    1. LOCALIZE VIA GRAPH FIRST: Before reading full files, call `get_code_subgraph` or `get_code_neighbors` on symbols mentioned in the issue or traceback to map upstream callers and downstream callees.
-    2. INSPECT MINIMAL SPANS: Open only the specific files and line ranges identified in the subgraph.
-    3. VERIFY CONTRACTS: Ensure your patch preserves parameter types, return signatures, and exceptions expected by connected nodes in the code graph.
-    4. TEST: Run the relevant unit tests to verify the fix before submitting your final git diff.
+  FOLLOW THIS DISCIPLINED GRAPH-FIRST WORKFLOW:
+  1. LOCALIZE VIA GRAPH FIRST:
+     - Start by calling `get_code_subgraph`, `get_code_neighbors`, or `search_similar_code` on the symbol, function, or symptom described in the issue.
+     - If `get_code_subgraph` returns 0 nodes because the exact node ID is unknown, call `search_similar_code` to find the exact symbol and file path.
+  2. READ TARGETED LINE SPANS ONLY:
+     - Call `read_file(filepath, start_line, end_line)` on the exact line range of the target function (and any directly connected callee/helper function in the subgraph if the logic is delegated across files).
+     - Never page sequentially through entire 1,000-line files; read only the 30-80 lines around the target symbol.
+  3. APPLY VERIFIED EDITS (`edit_file`):
+     - Call `edit_file(filepath, old_string, new_string)` using the EXACT `old_string` copied verbatim from your `read_file` output.
+     - If `edit_file` returns a `FileEditError` (`old_string not found`), immediately call `read_file` on the target lines to get the exact text and retry `edit_file`.
+  4. SUBMIT ONLY NON-EMPTY PATCHES:
+     - NEVER call `submit_patch` until at least one `edit_file` call has succeeded (`status: ok`).
+     - Once `edit_file` succeeds (and optional targeted `pytest` check passes), immediately call `submit_patch` to finish.
+tools:
+  - run_command
+  - read_file
+  - edit_file
+  - write_file
+  - get_status
+  - submit_patch
+  - get_code_neighbors
+  - search_similar_code
+  - get_code_subgraph
+  - agent_tool:
+      config_path: sub_agents/code_analyzer.yaml
+      skip_summarization: true
+generate_content_config: !include configs/sampling.yaml

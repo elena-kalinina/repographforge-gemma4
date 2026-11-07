@@ -15,7 +15,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,8 +54,12 @@ def create_partial_patch(diff_text: str) -> str:
 
 def create_sycophantic_drift_patch(task: Dict[str, Any]) -> str:
     """
-    Constructs a plausible, sycophantic patch that claims to fix the symptom
-    (e.g., adding a blanket try/except or returning None/True) without fixing root cause.
+    Constructs a task-specific plausible, sycophantic patch targeting the real file,
+    line numbers, and context of `task['patch']` (`FIX_PLAN.md` Phase 7 item 2),
+    rather than a constant 3-line `fix.py` string.
+    It mutates the real target hunk by keeping the original buggy line (or adding a
+    superficial no-op guard around the real context lines) so it touches the right
+    symbol/file but fails to enforce the structural contract.
     """
     diff_text = task.get("patch", "")
     file_diffs = split_diff_by_files(diff_text)
@@ -63,22 +67,53 @@ def create_sycophantic_drift_patch(task: Dict[str, Any]) -> str:
         return ""
 
     first_file_diff = file_diffs[0]
-    # Extract target file path
     match = re.search(r"\+\+\+ b/([^\n]+)", first_file_diff)
     if not match:
         return ""
-    target_file = match.group(1)
+    target_file = match.group(1).strip()
 
-    return f"""diff --git a/{target_file} b/{target_file}
---- a/{target_file}
-+++ b/{target_file}
-@@ -10,3 +10,6 @@
-+# Handle potential edge case defensively
-+try:
-+    pass
-+except Exception:
-+    pass
-"""
+    hunk_match = re.search(r"(@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@[^\n]*\n)([\s\S]+)", first_file_diff)
+    if not hunk_match:
+        return ""
+    hunk_header = hunk_match.group(1)
+    hunk_body = hunk_match.group(2).splitlines()
+
+    context_lines = [l[1:] for l in hunk_body if l.startswith(" ") and l[1:].strip()]
+    minus_lines = [l[1:] for l in hunk_body if l.startswith("-") and not l.startswith("---")]
+    plus_lines = [l[1:] for l in hunk_body if l.startswith("+") and not l.startswith("+++")]
+
+    anchor_line = minus_lines[0] if minus_lines else (context_lines[0] if context_lines else "    pass")
+    indent_match = re.match(r"^(\s*)", anchor_line)
+    indent = indent_match.group(1) if indent_match else "    "
+
+    # Mutate the gold addition so it looks superficially related to the symbol/context
+    # but omits the actual contract fix (or introduces an off-by-one / no-op guard).
+    if plus_lines:
+        # Take the first added line and turn any condition/call into a superficial no-op fallback
+        sample_plus = plus_lines[0]
+        drift_body = (
+            f" {context_lines[0]}\n" if context_lines else ""
+        ) + (
+            f"-{anchor_line}\n"
+            f"+{indent}# Ensure backward-compatible fallback for {target_file.split('/')[-1]}\n"
+            f"+{anchor_line}\n"
+            f"+{indent}if False:\n"
+            f"+{indent}    {sample_plus.lstrip()}\n"
+        )
+    else:
+        drift_body = (
+            f"-{anchor_line}\n"
+            f"+{indent}# Defensive guard for edge-case input\n"
+            f"+{anchor_line}\n"
+        )
+
+    return (
+        f"diff --git a/{target_file} b/{target_file}\n"
+        f"--- a/{target_file}\n"
+        f"+++ b/{target_file}\n"
+        f"{hunk_header}"
+        f"{drift_body}"
+    )
 
 
 def build_candidate_suite(

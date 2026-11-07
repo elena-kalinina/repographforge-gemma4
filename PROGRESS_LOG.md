@@ -48,8 +48,8 @@
   - `src/graph_sampler.py` extracted 1,139 multi-node subgraphs across `fastapi` and `rich` combining 2-hop structural ego-graphs with 256-dim embedding cosine neighbors.
 - **350 Multi-File Synthetic Tasks Generated:**
   - Gemma 4 31B applied reverse fault injection to synthesize paired `problem_statement`, `bug_patch`, `reproduction_test`, and `evidence_rubric` saved to `synthetic_tasks.jsonl`.
-- **113 Pristine Teacher Trajectories Collected:**
-  - High-density quality filter admitted 113 complete 4-turn graph-first expert trajectories (`sft_verified.jsonl`) ready for SFT QLoRA fine-tuning.
+- **51–350 Synthetic Teacher Trajectories Collected:**
+  - Synthesized 4-turn graph-first teacher trajectories (`sft_verified.jsonl` and `sft_scaled.jsonl`); subsequently upgraded in `src/build_real_sft.py` to construct 100% grounded SFT trajectories directly from the 115 real `train_tasks.jsonl` maintainer `fix_patch` diffs (`sft_real_train.jsonl`).
 
 ---
 
@@ -120,13 +120,16 @@
   - **$RQ_3$ & $H_3$ (Variance Reduction via RFT):** Proved that Best-of-$N$ sampling ($N=4$) filtered by $V_{\text{graph}}$ doubles accepted rollout yield (8.0% vs. 4.0%) and eliminates tool-budget exhaustion when paired with the Anti-Hesitation Action Gate.
   - **$RQ_4$ & $H_4$ (Model Scale & Edge Hardware Feasibility):** Formalized the edge capability inversion hypothesis—demonstrating that parameter-efficient fine-tuning on graph trajectories enables lightweight models (12B, E4B) running on everyday developer hardware ($\le 8$–16 GB VRAM) to surpass zero-shot 31B performance at $>2\times$ faster generation throughput.
 
-- **Full 14-Task Holdout Sweep Executed ($D_{\text{val-ood}}$):**
-  - **Patch Submission Rate:** **10 / 14 tasks patched (71.4%)** across `psf/requests` and `encode/httpx` (up from 0.0% in zero-shot baseline).
-  - **Target File Localization Accuracy:** **13 / 14 tasks (92.9%)** correctly identified and edited the ground-truth modified source file (`models.py`, `utils.py`, `sessions.py`, `status_codes.py`, `_parsers.py`).
-  - **Empirical Proof of Context Quicksand Law:**
-    - Tasks with single graph-directed read (`Files Read = 1`): **100% submission success (6/6)**, averaging only 7.5 tool calls and 54k tokens.
-    - Tasks falling into sequential multi-file reading (`Files Read ≥ 4`): tool calls hit the 15-call ceiling (15.0 avg) and tokens surged past 114k, causing a 50% timeout rate.
-  - Confirms that graph-span targeted navigation is the key to preventing context bloat and agent timeout.
+- **Full 14-Task Holdout Sweep & Post-Mortem Audit (`DIAGNOSIS.md` & `FIX_PLAN.md`):**
+  - **Empirical Progression Across Runs:**
+    - **Run 1 (Pilot SFT+RFT):** Scored **0.03** on the blind Kaggle Leaderboard; localized 13/14 target files and resolved `requests_6644` (`exit_code=0`). *(Note: Early trace audit script included `or args == {}` which over-counted zero-arg tool calls as `submit_patch`; fixed in `C5`).*
+    - **Run 2 (Scaled SFT, No RFT):** Scored **0.01** on the blind Leaderboard; submitted 4/14 valid non-empty patches (`requests_6644` passed `pytest` with `exit_code=0` in 18.9s; `requests_7328`, `httpx_3672`, and `requests_6589` produced valid diffs), while 10/14 timed out due to unmasked `<|turn>user` headers (`B1`) and `MAX_LEN=1536` truncation (`B2`).
+    - **Run 3 (4-Sample Unmasked RFT):** Regressed to 1/14 submitted patches because the RFT regex only extracted markdown ` ```diff ` blocks (`B3`), training the model against native `edit_file` tool calls.
+  - **All Remediation Fixes Implemented (`src/chat_format.py`, `src/build_real_sft.py`, `src/train_qlora.py`, `src/train_rft.py`, `src/candidate_patch_generator.py`):**
+    1. **B1 / B2 / B4 / B5 / C1 / C2 (`src/chat_format.py`):** Single canonical formatter with system prompt + 9 tool schemas, `MAX_LEN=8192` drop-don't-truncate, single-BOS check, unmasked `<turn|>` EOT token, and mandatory Phase 1.2 pre-training decoded span print gate.
+    2. **A1 / A2 / A3 (`src/build_real_sft.py`):** Grounded SFT builder extracting real `fix_patch` hunks (`assert "fix" in field_name`) and code-graph neighborhoods from the 115 real `train_tasks.jsonl` tasks + Phase 2.2 direction check.
+    3. **C3 / C4 / C5 (`notebooks/repographforge_clean_master.md`):** Raised `max_output_tokens: 4096`, replaced the 1-file prohibition with the Phase 3.4 budget prompt, removed `or args == {}` from the audit metric, and added 3-arm A/B/C evaluation support.
+    4. **Phase 6 & 7 (`src/rft_sampler.py`, `src/train_rft.py`, `src/candidate_patch_generator.py`):** Base-model judge (never `main_lora` self-judging), hard floor of `>= 50` accepted tool-calling rollouts for RFT, and task-specific sycophantic drift negatives for Table 1.
 
 ---
 

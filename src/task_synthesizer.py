@@ -2,8 +2,14 @@
 """
 Milestone 3: Task Synthesizer via Reverse Fault Injection.
 Prompts a teacher LLM (Gemma 4 31B via vLLM or Gemini) to introduce realistic,
-subtle multi-node bugs across connected subgraph nodes, outputting paired
-bug_patch, reproduction_test, problem_statement, and evidence_rubric.
+subtle multi-node bugs across connected subgraph nodes, outputting paired:
+  - problem_statement (without leaking exact node IDs)
+  - target_node & target_file & target_line_span
+  - buggy_snippet (the exact code present when the bug is active -> old_string for edit_file)
+  - fixed_snippet (the clean original code -> new_string for edit_file)
+  - bug_patch (diff introducing the bug)
+  - gold_patch (inverted diff fixing the bug: Δ_gold = -Δ_bug)
+  - evidence_rubric (structural caller/callee contracts)
 """
 
 import argparse
@@ -25,14 +31,17 @@ logger = logging.getLogger("task_synthesizer")
 
 SYNTHESIZER_SYSTEM_PROMPT = """You are an expert software engineering task synthesizer implementing RepoGraphForge.
 Given a connected code-graph subgraph and the working Python source code of its nodes,
-inject a realistic, subtle multi-node bug (e.g. breaking an argument contract, subtle return type mismatch,
-or state synchronization error between caller and callee).
+inject a realistic, subtle bug (e.g. breaking an argument contract, subtle return type mismatch,
+missing edge-case guard, or caller/callee contract mismatch).
 
 Output strictly valid JSON matching this schema:
 {
-  "problem_statement": "Realistic GitHub issue report describing symptoms without naming internal functions.",
-  "bug_patch": "Valid unified git diff that introduces the bug into the working code.",
-  "reproduction_test": "A pytest test function that fails when bug_patch is applied and passes on clean code.",
+  "problem_statement": "Realistic GitHub issue report describing the symptom/traceback without leaking internal node IDs.",
+  "target_node": "Exact node ID modified to introduce the bug",
+  "target_file": "Relative file path of the modified node (e.g. fastapi/routing.py)",
+  "buggy_snippet": "The exact 3-12 lines of Python code AFTER injecting the bug (this is what the agent will see in the buggy repo).",
+  "fixed_snippet": "The exact 3-12 lines of original clean Python code BEFORE the bug (the gold fix that restores working behavior).",
+  "reproduction_test": "A pytest test function that fails on buggy_snippet and passes on fixed_snippet.",
   "evidence_rubric": [
     "Contract 1: Specifying parameter/type invariant...",
     "Contract 2: Specifying caller/callee contract...",
@@ -40,6 +49,51 @@ Output strictly valid JSON matching this schema:
   ]
 }
 """
+
+
+def infer_file_from_node(node: Dict[str, Any]) -> str:
+    """Extracts or infers the relative Python file path for a graph node."""
+    f = node.get("file") or node.get("file_path") or ""
+    if f:
+        return str(f)
+    nid = str(node.get("id", "module"))
+    parts = nid.split(".")
+    if len(parts) >= 2:
+        return "/".join(parts[:-1]) + ".py"
+    return parts[0] + ".py"
+
+
+def invert_unified_diff(diff_text: str) -> str:
+    """Inverts a unified git diff (Δ_gold = -Δ_bug) by swapping +/- lines."""
+    if not diff_text:
+        return ""
+    inverted = []
+    for line in diff_text.splitlines():
+        if line.startswith("--- a/"):
+            inverted.append(line)
+        elif line.startswith("+++ b/"):
+            inverted.append(line)
+        elif line.startswith("+") and not line.startswith("+++"):
+            inverted.append("-" + line[1:])
+        elif line.startswith("-") and not line.startswith("---"):
+            inverted.append("+" + line[1:])
+        else:
+            inverted.append(line)
+    return "\n".join(inverted)
+
+
+def build_unified_diff(target_file: str, old_code: str, new_code: str) -> str:
+    """Constructs a clean unified git diff from old_code -> new_code."""
+    old_lines = [f"-{l}" for l in old_code.splitlines()]
+    new_lines = [f"+{l}" for l in new_code.splitlines()]
+    body = "\n".join(old_lines + new_lines)
+    return (
+        f"diff --git a/{target_file} b/{target_file}\n"
+        f"--- a/{target_file}\n"
+        f"+++ b/{target_file}\n"
+        f"@@ -1,{len(old_lines)} +1,{len(new_lines)} @@\n"
+        f"{body}"
+    )
 
 
 def build_mutation_prompt(subgraph: Dict[str, Any]) -> str:
@@ -51,12 +105,12 @@ def build_mutation_prompt(subgraph: Dict[str, Any]) -> str:
     snippets = []
     for n in nodes:
         nid = n.get("id", "")
+        fpath = infer_file_from_node(n)
         code = n.get("text", "").strip()
-        nodes_summary.append(f"- `{nid}`")
+        nodes_summary.append(f"- `{nid}` (file: `{fpath}`)")
         if code:
-            # Truncate overly long functions to keep prompt compact
             code_preview = "\n".join(code.splitlines()[:60])
-            snippets.append(f"### Node: {nid}\n```python\n{code_preview}\n```")
+            snippets.append(f"### Node: {nid} (file: {fpath})\n```python\n{code_preview}\n```")
 
     edges_summary = [
         f"- `{e.get('source')}` -> `{e.get('target')}` ({e.get('type', 'calls')})"
@@ -121,23 +175,69 @@ def synthesize_task_vllm(
         headers={"Content-Type": "application/json"},
     )
 
+    nodes = subgraph.get("nodes", [])
+    anchor_node = subgraph.get("anchor_node", nodes[0].get("id", "anchor") if nodes else "anchor")
+    default_file = infer_file_from_node(nodes[0]) if nodes else "app.py"
+
     for _ in range(max_retries):
         try:
             with urllib.request.urlopen(req, timeout=90) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 content = data["choices"][0]["message"]["content"]
                 parsed = safe_parse_json(content)
-                if parsed and parsed.get("bug_patch") and parsed.get("problem_statement"):
-                    return {
-                        "synthetic_id": f"syn_{subgraph.get('graph_file', 'graph').split('.')[0]}_{subgraph.get('anchor_node', 'anchor')}",
-                        "graph_file": subgraph.get("graph_file", ""),
-                        "anchor_node": subgraph.get("anchor_node", ""),
-                        "nodes_in_subgraph": [n.get("id") for n in subgraph.get("nodes", [])],
-                        "problem_statement": parsed.get("problem_statement"),
-                        "bug_patch": parsed.get("bug_patch"),
-                        "reproduction_test": parsed.get("reproduction_test", ""),
-                        "evidence_rubric": parsed.get("evidence_rubric", []),
-                    }
+                if not parsed or not parsed.get("problem_statement"):
+                    continue
+
+                target_node = parsed.get("target_node") or anchor_node
+                target_file = parsed.get("target_file") or default_file
+                buggy_snippet = (parsed.get("buggy_snippet") or "").strip()
+                fixed_snippet = (parsed.get("fixed_snippet") or "").strip()
+
+                # Support both new schema (buggy_snippet/fixed_snippet) and legacy bug_patch
+                raw_bug_patch = (parsed.get("bug_patch") or "").strip()
+                if buggy_snippet and fixed_snippet and buggy_snippet != fixed_snippet:
+                    bug_patch = build_unified_diff(target_file, fixed_snippet, buggy_snippet)
+                    gold_patch = build_unified_diff(target_file, buggy_snippet, fixed_snippet)
+                elif raw_bug_patch:
+                    bug_patch = raw_bug_patch
+                    gold_patch = invert_unified_diff(raw_bug_patch)
+                else:
+                    continue
+
+                # Preserve compact subgraph metadata for grounded teacher rollout synthesis
+                compact_nodes = []
+                for n in nodes[:6]:
+                    compact_nodes.append({
+                        "id": n.get("id", ""),
+                        "file": infer_file_from_node(n),
+                        "start_line": n.get("start_line", n.get("line_start", 1)),
+                        "end_line": n.get("end_line", n.get("line_end", 60)),
+                        "text": (n.get("text") or "")[:1200],
+                    })
+                compact_edges = [
+                    {"source": e.get("source"), "target": e.get("target"), "type": e.get("type", "calls")}
+                    for e in subgraph.get("edges", [])[:8]
+                ]
+
+                g_name = subgraph.get("graph_file", subgraph.get("graph_snapshot", "graph")).split(".")[0]
+                return {
+                    "synthetic_id": f"syn_{g_name}_{anchor_node}",
+                    "graph_file": subgraph.get("graph_file", subgraph.get("graph_snapshot", "")),
+                    "anchor_node": anchor_node,
+                    "target_node": target_node,
+                    "target_file": target_file,
+                    "buggy_snippet": buggy_snippet,
+                    "fixed_snippet": fixed_snippet,
+                    "nodes_in_subgraph": [n.get("id") for n in nodes],
+                    "subgraph_nodes": compact_nodes,
+                    "subgraph_edges": compact_edges,
+                    "problem_statement": parsed.get("problem_statement"),
+                    "bug_patch": bug_patch,
+                    "fix_patch": gold_patch,
+                    "gold_patch": gold_patch,
+                    "reproduction_test": parsed.get("reproduction_test", ""),
+                    "evidence_rubric": parsed.get("evidence_rubric", []),
+                }
         except Exception:
             time.sleep(1)
     return None
@@ -154,7 +254,6 @@ def run_batch_synthesis(
     """Concurrent batch synthesis across sampled subgraphs."""
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Checkpoint
     already_done = set()
     if output_file.exists():
         with output_file.open("r", encoding="utf-8") as f:
@@ -171,10 +270,9 @@ def run_batch_synthesis(
             if line.strip():
                 subgraphs.append(json.loads(line))
 
-    # Filter out already synthesized
     subgraphs_to_run = [
         s for s in subgraphs
-        if f"syn_{s.get('graph_file', 'graph').split('.')[0]}_{s.get('anchor_node', 'anchor')}" not in already_done
+        if f"syn_{s.get('graph_file', s.get('graph_snapshot', 'graph')).split('.')[0]}_{s.get('anchor_node', 'anchor')}" not in already_done
     ][:target_count]
 
     logger.info("Synthesizing %d new tasks using %d parallel workers on %s...", len(subgraphs_to_run), max_workers, model_name)
