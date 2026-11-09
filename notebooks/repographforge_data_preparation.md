@@ -602,8 +602,29 @@ import json, re
 from pathlib import Path
 
 print("=== PHASE 2.1b: BUILDING GROUNDED SFT TRAJECTORIES FROM 115 REAL TRAIN TASKS ===")
+
+WORKING_DIR = Path("/kaggle/working")
+SPLITS_DIR = WORKING_DIR / "data/splits"
+TRAJECTORIES_DIR = WORKING_DIR / "data/trajectories"
+for p in [SPLITS_DIR, TRAJECTORIES_DIR]:
+    p.mkdir(parents=True, exist_ok=True)
+
 train_tasks_file = SPLITS_DIR / "train_tasks.jsonl"
 real_sft_file = TRAJECTORIES_DIR / "sft_real_train.jsonl"
+
+# Auto-partition on the fly if train_tasks.jsonl was not yet created in this session
+if not train_tasks_file.exists():
+    for p in [Path("/kaggle/input/competitions/gemma-4-developer-agent/tasks.jsonl"),
+              Path("/kaggle/input/gemma-4-developer-agent/tasks.jsonl")]:
+        if p.exists():
+            print(f"Creating train_tasks.jsonl on the fly from {p}...")
+            with open(p) as f_in, open(train_tasks_file, "w") as f_out:
+                for line in f_in:
+                    if line.strip():
+                        t = json.loads(line)
+                        if not any(ood in t.get("repo", "").lower() for ood in ["requests", "httpx"]):
+                            f_out.write(json.dumps(t) + "\n")
+            break
 
 def parse_diff_hunks(fix_patch):
     field_name = "fix_patch"
@@ -701,6 +722,8 @@ import json, re
 from pathlib import Path
 
 print("=== PHASE 2.2: SANITY-CHECKING fix_patch DIRECTION ON 10 EXAMPLES ===")
+WORKING_DIR = Path("/kaggle/working")
+TRAJECTORIES_DIR = WORKING_DIR / "data/trajectories"
 real_sft_file = TRAJECTORIES_DIR / "sft_real_train.jsonl"
 
 with open(real_sft_file) as f:
@@ -740,6 +763,8 @@ import json
 from pathlib import Path
 
 print("=== FINAL DATASET MERGE & AUDIT ===")
+WORKING_DIR = Path("/kaggle/working")
+TRAJECTORIES_DIR = WORKING_DIR / "data/trajectories"
 f_real = TRAJECTORIES_DIR / "sft_real_train.jsonl"
 f_scaled = TRAJECTORIES_DIR / "sft_scaled.jsonl"
 f_combined = TRAJECTORIES_DIR / "sft_combined.jsonl"
