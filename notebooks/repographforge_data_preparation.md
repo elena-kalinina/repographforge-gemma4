@@ -741,9 +741,18 @@ for idx, s in enumerate(samples, start=1):
 
     # 1. old_string must appear in read_file observation (the pre-fix buggy file)
     old_in_read = all(line.strip() in read_msg["content"] for line in args["old_string"].splitlines() if line.strip())
-    # 2. new_string must differ from old_string and match '+' additions in fix_patch
-    plus_lines = [l[1:].strip() for l in fix_patch.splitlines() if l.startswith("+") and not l.startswith("+++") and l[1:].strip()]
-    new_matches_fix = all(pl in args["new_string"] for pl in plus_lines[:3])
+
+    # 2. Check that the hunk modification matches fix_patch additions and removals
+    old_set = {l.strip() for l in args["old_string"].splitlines() if l.strip()}
+    new_set = {l.strip() for l in args["new_string"].splitlines() if l.strip()}
+    removed = old_set - new_set
+    added = new_set - old_set
+    patch_plus = {l[1:].strip() for l in fix_patch.splitlines() if l.startswith("+") and not l.startswith("+++") and l[1:].strip()}
+    patch_minus = {l[1:].strip() for l in fix_patch.splitlines() if l.startswith("-") and not l.startswith("---") and l[1:].strip()}
+
+    added_ok = (not added) or any(a in patch_plus for a in added)
+    removed_ok = (not removed) or any(r in patch_minus for r in removed)
+    new_matches_fix = bool((added or removed) and added_ok and removed_ok)
 
     ok = bool(old_in_read and new_matches_fix and args["old_string"] != args["new_string"])
     passed_direction += int(ok)
