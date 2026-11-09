@@ -278,72 +278,87 @@ def render(messages: List[Dict[str, Any]], tokenizer: Any, tools: Optional[List[
     return tokenizer.apply_chat_template(norm_msgs, tokenize=False)
 
 def _mask_rendered_token_ids(input_ids: List[int], tokenizer: Any) -> List[int]:
+    """
+    Token-level span masker supporting both Gemma 4 (`<|turn>model ... <turn|>`)
+    and Gemma 2/3 (`<start_of_turn>model ... <end_of_turn>`), masking inline
+    `<|tool_response> ... <tool_response|>` observations while keeping all assistant
+    turns and closing end-of-turn tokens (`<turn|>` / `<end_of_turn>`) trainable!
+    """
     labels = [-100] * len(input_ids)
     unk_id = getattr(tokenizer, "unk_token_id", -1)
-    def _tid(t):
-        v = tokenizer.convert_tokens_to_ids(t)
-        return v if (isinstance(v, int) and v != unk_id) else -999
+
+    def _tid(t: str) -> int:
+        tid = tokenizer.convert_tokens_to_ids(t)
+        return tid if (isinstance(tid, int) and tid != unk_id) else -999
+
     turn_open_ids = {x for x in (_tid("<|turn>"), _tid("<start_of_turn>")) if x >= 0}
     turn_close_ids = {x for x in (_tid("<turn|>"), _tid("<end_of_turn>")) if x >= 0}
     tool_resp_open = _tid("<|tool_response>")
     tool_resp_close = _tid("<tool_response|>")
+    system_role_ids = tokenizer.encode("system", add_special_tokens=False)
+    user_role_ids = tokenizer.encode("user", add_special_tokens=False)
     model_role_ids = tokenizer.encode("model", add_special_tokens=False)
     nl_ids = set(tokenizer.encode("\n", add_special_tokens=False))
+    bos_id = getattr(tokenizer, "bos_token_id", None)
 
-    in_model_turn = False
+    in_system = False
+    in_user = False
     in_tool_response = False
-    i, n = 0, len(input_ids)
+
+    i = 0
+    n = len(input_ids)
+
     while i < n:
         if input_ids[i] in turn_open_ids:
-            if model_role_ids and input_ids[i + 1 : i + 1 + len(model_role_ids)] == model_role_ids:
+            if system_role_ids and input_ids[i + 1 : i + 1 + len(system_role_ids)] == system_role_ids:
+                in_system = True
+                i += 1 + len(system_role_ids)
+                continue
+            elif user_role_ids and input_ids[i + 1 : i + 1 + len(user_role_ids)] == user_role_ids:
+                in_user = True
+                i += 1 + len(user_role_ids)
+                continue
+            elif model_role_ids and input_ids[i + 1 : i + 1 + len(model_role_ids)] == model_role_ids:
                 i += 1 + len(model_role_ids)
                 if i < n and input_ids[i] in nl_ids:
                     i += 1
-                in_model_turn = True
-                in_tool_response = False
                 continue
+
+        if input_ids[i] in turn_close_ids:
+            if in_system:
+                in_system = False
+                i += 1
+                continue
+            if in_user:
+                in_user = False
+                i += 1
+                continue
+            # End-of-turn token on model generation carries gradient (B1 fix!)
+            labels[i] = input_ids[i]
+            i += 1
+            continue
+
+        if input_ids[i] == tool_resp_open:
+            in_tool_response = True
+            i += 1
+            continue
+
+        if input_ids[i] == tool_resp_close:
+            in_tool_response = False
+            i += 1
+            continue
+
+        if not in_system and not in_user and not in_tool_response:
+            if bos_id is not None and input_ids[i] == bos_id:
+                pass
+            elif input_ids[i] in nl_ids and (i == 0 or input_ids[i - 1] in turn_close_ids):
+                pass
             else:
-                in_model_turn = False
-                in_tool_response = False
-                i += 1
-                continue
-        if in_model_turn:
-            if input_ids[i] == tool_resp_open:
-                in_tool_response = True
-                i += 1
-                continue
-            if input_ids[i] == tool_resp_close:
-                in_tool_response = False
-                i += 1
-                continue
-            if input_ids[i] in turn_close_ids:
-                labels[i] = input_ids[i]  # CRITICAL B1 FIX: Unmask EOT stop token!
-                in_model_turn = False
-                i += 1
-                continue
-            if not in_tool_response:
                 labels[i] = input_ids[i]
+
         i += 1
+
     return labels
-
-def build_example(raw_messages: List[Dict[str, Any]], tokenizer: Any, max_len: int = 8192, tools: Optional[List[Dict[str, Any]]] = COMPETITION_TOOLS, system_prompt: Optional[str] = DEFAULT_SYSTEM_PROMPT) -> Optional[Dict[str, List[int]]]:
-    rendered_full = render(raw_messages, tokenizer, tools=tools, system_prompt=system_prompt)
-    # CRITICAL B4 FIX: add_special_tokens=False prevents duplicate <bos> token!
-    input_ids = list(tokenizer(rendered_full, add_special_tokens=False)["input_ids"])
-    labels = _mask_rendered_token_ids(input_ids, tokenizer)
-
-    bos_id = getattr(tokenizer, "bos_token_id", None)
-    if bos_id is not None:
-        while len(input_ids) >= 2 and input_ids[0] == bos_id and input_ids[1] == bos_id:
-            input_ids.pop(0)
-            labels.pop(0)
-        if input_ids and input_ids[0] == bos_id:
-            labels[0] = -100
-
-    # CRITICAL B2 FIX: Drop (never right-truncate) trajectories that exceed max_len!
-    if len(input_ids) > max_len:
-        return None
-    return {"input_ids": input_ids, "attention_mask": [1] * len(input_ids), "labels": labels}
 
 def verify_and_print_samples(tokenized_samples: List[Dict[str, List[int]]], tokenizer: Any, num_samples_to_print: int = 3) -> None:
     assert tokenized_samples, "Tokenized dataset is empty!"

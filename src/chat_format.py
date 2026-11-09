@@ -383,67 +383,84 @@ def _mask_rendered_token_ids(input_ids: List[int], tokenizer: Any) -> List[int]:
     """
     Token-level span masker supporting both Gemma 4 (`<|turn>model ... <turn|>`)
     and Gemma 2/3 (`<start_of_turn>model ... <end_of_turn>`), masking inline
-    `<|tool_response> ... <tool_response|>` observations while keeping the closing
-    end-of-turn token (`<turn|>` / `<end_of_turn>`) trainable!
+    `<|tool_response> ... <tool_response|>` observations while keeping all assistant
+    turns and closing end-of-turn tokens (`<turn|>` / `<end_of_turn>`) trainable!
     """
     labels = [-100] * len(input_ids)
     unk_id = getattr(tokenizer, "unk_token_id", -1)
 
-    def _tok_id(t: str) -> int:
+    def _tid(t: str) -> int:
         tid = tokenizer.convert_tokens_to_ids(t)
         return tid if (isinstance(tid, int) and tid != unk_id) else -999
 
-    turn_open_ids = {x for x in (_tok_id("<|turn>"), _tok_id("<start_of_turn>")) if x >= 0}
-    turn_close_ids = {x for x in (_tok_id("<turn|>"), _tok_id("<end_of_turn>")) if x >= 0}
-    tool_resp_open = _tok_id("<|tool_response>")
-    tool_resp_close = _tok_id("<tool_response|>")
+    turn_open_ids = {x for x in (_tid("<|turn>"), _tid("<start_of_turn>")) if x >= 0}
+    turn_close_ids = {x for x in (_tid("<turn|>"), _tid("<end_of_turn>")) if x >= 0}
+    tool_resp_open = _tid("<|tool_response>")
+    tool_resp_close = _tid("<tool_response|>")
+    system_role_ids = tokenizer.encode("system", add_special_tokens=False)
+    user_role_ids = tokenizer.encode("user", add_special_tokens=False)
     model_role_ids = tokenizer.encode("model", add_special_tokens=False)
     nl_ids = set(tokenizer.encode("\n", add_special_tokens=False))
+    bos_id = getattr(tokenizer, "bos_token_id", None)
 
-    in_model_turn = False
+    in_system = False
+    in_user = False
     in_tool_response = False
+
     i = 0
     n = len(input_ids)
 
     while i < n:
         if input_ids[i] in turn_open_ids:
-            if model_role_ids and input_ids[i + 1 : i + 1 + len(model_role_ids)] == model_role_ids:
+            if system_role_ids and input_ids[i + 1 : i + 1 + len(system_role_ids)] == system_role_ids:
+                in_system = True
+                i += 1 + len(system_role_ids)
+                continue
+            elif user_role_ids and input_ids[i + 1 : i + 1 + len(user_role_ids)] == user_role_ids:
+                in_user = True
+                i += 1 + len(user_role_ids)
+                continue
+            elif model_role_ids and input_ids[i + 1 : i + 1 + len(model_role_ids)] == model_role_ids:
                 i += 1 + len(model_role_ids)
-                # Also keep the newline immediately after `<|turn>model\n` masked as prompt header
                 if i < n and input_ids[i] in nl_ids:
                     i += 1
-                in_model_turn = True
-                in_tool_response = False
                 continue
+
+        if input_ids[i] in turn_close_ids:
+            if in_system:
+                in_system = False
+                i += 1
+                continue
+            if in_user:
+                in_user = False
+                i += 1
+                continue
+            # End-of-turn token on model generation carries gradient (B1 fix!)
+            labels[i] = input_ids[i]
+            i += 1
+            continue
+
+        if input_ids[i] == tool_resp_open:
+            in_tool_response = True
+            i += 1
+            continue
+
+        if input_ids[i] == tool_resp_close:
+            in_tool_response = False
+            i += 1
+            continue
+
+        if not in_system and not in_user and not in_tool_response:
+            if bos_id is not None and input_ids[i] == bos_id:
+                pass
+            elif input_ids[i] in nl_ids and (i == 0 or input_ids[i - 1] in turn_close_ids):
+                pass
             else:
-                in_model_turn = False
-                in_tool_response = False
-                i += 1
-                continue
-
-        if in_model_turn:
-            if input_ids[i] == tool_resp_open:
-                in_tool_response = True
-                i += 1
-                continue
-            if input_ids[i] == tool_resp_close:
-                in_tool_response = False
-                i += 1
-                continue
-            if input_ids[i] in turn_close_ids:
-                # B1 CRITICAL FIX: Unmask the closing end-of-turn token so the model learns to stop!
-                labels[i] = input_ids[i]
-                in_model_turn = False
-                i += 1
-                continue
-
-            if not in_tool_response:
                 labels[i] = input_ids[i]
 
         i += 1
 
     return labels
-
 
 def verify_and_print_samples(
     tokenized_samples: List[Dict[str, List[int]]],
