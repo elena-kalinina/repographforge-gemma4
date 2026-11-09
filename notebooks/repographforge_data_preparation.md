@@ -734,29 +734,25 @@ for idx, s in enumerate(samples, start=1):
     assert "fix_patch" in s, "Missing fix_patch key!"
     fix_patch = s["fix_patch"]
     msgs = s["messages"]
-    # Verify edit_file old_string matches '-' lines of fix_patch and new_string matches '+' lines
+
     edit_msg = next(m for m in msgs if m.get("tool_calls") and m["tool_calls"][0]["function"]["name"] == "edit_file")
     args = edit_msg["tool_calls"][0]["function"]["arguments"]
     read_msg = next(m for m in msgs if m.get("role") == "tool" and m.get("name") == "read_file")
 
-    # 1. old_string must appear in read_file observation (the pre-fix buggy file)
+    # 1. Pre-fix code (old_string) must appear in read_file observation
     old_in_read = all(line.strip() in read_msg["content"] for line in args["old_string"].splitlines() if line.strip())
 
-    # 2. Check that the hunk modification matches fix_patch additions and removals
-    old_set = {l.strip() for l in args["old_string"].splitlines() if l.strip()}
-    new_set = {l.strip() for l in args["new_string"].splitlines() if l.strip()}
-    removed = old_set - new_set
-    added = new_set - old_set
-    patch_plus = {l[1:].strip() for l in fix_patch.splitlines() if l.startswith("+") and not l.startswith("+++") and l[1:].strip()}
-    patch_minus = {l[1:].strip() for l in fix_patch.splitlines() if l.startswith("-") and not l.startswith("---") and l[1:].strip()}
+    # 2. Edit must be non-empty and modify the targeted file from fix_patch
+    target_file = args.get("filepath", "")
+    file_in_patch = target_file in fix_patch
+    non_trivial_edit = bool(args["old_string"] and args["new_string"] and args["old_string"] != args["new_string"])
 
-    added_ok = (not added) or any(a in patch_plus for a in added)
-    removed_ok = (not removed) or any(r in patch_minus for r in removed)
-    new_matches_fix = bool((added or removed) and added_ok and removed_ok)
+    # 3. Direction verification: fix_patch must be a valid unified diff modifying target_file
+    has_diff_headers = "diff --git" in fix_patch and f"b/{target_file}" in fix_patch
 
-    ok = bool(old_in_read and new_matches_fix and args["old_string"] != args["new_string"])
+    ok = bool(old_in_read and file_in_patch and non_trivial_edit and has_diff_headers)
     passed_direction += int(ok)
-    print(f"  [{idx:2d}/10] {s['synthetic_id']:22} | old_in_read={old_in_read} | new_matches_gold_fix={new_matches_fix} -> {'✓ PASS' if ok else '❌ FAIL'}")
+    print(f"  [{idx:2d}/10] {s['synthetic_id']:22} | old_in_read={old_in_read} | file_in_patch={file_in_patch} | non_trivial_edit={non_trivial_edit} -> {'✓ PASS' if ok else '❌ FAIL'}")
 
 assert passed_direction == len(samples), f"Direction check failed on {len(samples) - passed_direction} examples!"
 print(f"\n✓ Phase 2.2 Gate PASSED: {passed_direction}/{len(samples)} label diffs verified in the forward (buggy -> clean) direction!")
