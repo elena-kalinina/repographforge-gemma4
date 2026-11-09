@@ -455,8 +455,8 @@ tokenizer = AutoTokenizer.from_pretrained(str(MODEL_PATH), local_files_only=True
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-# Phase 1.1–1.4: Tokenize with MAX_LEN = 8192 and strict drop-don't-truncate policy
-MAX_LEN = 8192
+# Phase 1.1–1.4: Tokenize with MAX_LEN = 2048 (safeguards Gemma 4's 256k logits matrix from OOM)
+MAX_LEN = 2048
 raw_records = []
 with open(TRAJECTORIES_FILE, "r", encoding="utf-8") as f:
     for line in f:
@@ -483,10 +483,10 @@ tokenized_ds = Dataset.from_list(kept)
 
 num_gpus = torch.cuda.device_count()
 if num_gpus == 4:
-    # Give GPU 0 extra headroom (~9 GiB free) for embeddings, activations, and loss orchestration
-    max_memory = {0: "13.0GiB", 1: "17.0GiB", 2: "17.0GiB", 3: "17.0GiB"}
+    # Give GPU 0 massive headroom (~12 GiB free) for Gemma 4's 256k logits matrix
+    max_memory = {0: "10.0GiB", 1: "18.0GiB", 2: "18.0GiB", 3: "18.0GiB"}
 elif num_gpus > 1:
-    max_memory = {i: "16.0GiB" for i in range(num_gpus)}
+    max_memory = {0: "12.0GiB", 1: "18.0GiB"}
 else:
     max_memory = None
 

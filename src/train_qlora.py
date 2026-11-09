@@ -113,10 +113,10 @@ def load_gemma4_model(model_path: Path):
 
     num_gpus = torch.cuda.device_count()
     if num_gpus == 4:
-        # Give GPU 0 extra headroom (~9 GiB free) for embeddings, activations and loss orchestration
-        max_memory = {0: "13.0GiB", 1: "17.0GiB", 2: "17.0GiB", 3: "17.0GiB"}
+        # Give GPU 0 massive headroom (~12 GiB free) for Gemma 4's 256k logits matrix
+        max_memory = {0: "10.0GiB", 1: "18.0GiB", 2: "18.0GiB", 3: "18.0GiB"}
     elif num_gpus > 1:
-        max_memory = {i: "16.0GiB" for i in range(num_gpus)}
+        max_memory = {0: "12.0GiB", 1: "18.0GiB"}
     else:
         max_memory = None
     device_map = "balanced" if num_gpus > 1 else "auto"
@@ -160,7 +160,7 @@ def train(
     output_adapter_dir: Path,
     learning_rate: float = 1e-4,
     num_epochs: int = 2,
-    max_seq_length: int = 8192,
+    max_seq_length: int = 2048,
 ) -> None:
     import torch
     import torch.nn as nn
@@ -284,7 +284,7 @@ def main() -> None:
     )
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate (Phase 4.1 default: 1e-4)")
     parser.add_argument("--epochs", type=int, default=2, help="Training epochs (Phase 4.1 default: 2)")
-    parser.add_argument("--max-seq-len", type=int, default=8192, help="Max sequence length (Phase 1.3 default: 8192)")
+    parser.add_argument("--max-seq-len", type=int, default=2048, help="Max sequence length (default: 2048)")
     args = parser.parse_args()
 
     dataset_path = args.dataset_path
