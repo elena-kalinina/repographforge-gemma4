@@ -421,12 +421,12 @@ for i in range(num_gpus):
 ```python
 %%writefile /kaggle/working/train_sft.py
 import os, sys, json, logging
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from pathlib import Path
 import torch
 import torch.nn as nn
 
 sys.path.insert(0, "/kaggle/working")
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger("train_sft")
 
@@ -482,7 +482,13 @@ verify_and_print_samples(kept, tokenizer, num_samples_to_print=3)
 tokenized_ds = Dataset.from_list(kept)
 
 num_gpus = torch.cuda.device_count()
-max_memory = {i: "16.5GiB" for i in range(num_gpus)}
+if num_gpus == 4:
+    # Give GPU 0 extra headroom (~9 GiB free) for embeddings, activations, and loss orchestration
+    max_memory = {0: "13.0GiB", 1: "17.0GiB", 2: "17.0GiB", 3: "17.0GiB"}
+elif num_gpus > 1:
+    max_memory = {i: "16.0GiB" for i in range(num_gpus)}
+else:
+    max_memory = None
 
 base_model = Gemma4ForConditionalGeneration.from_pretrained(
     str(MODEL_PATH),
@@ -510,7 +516,7 @@ peft_config = LoraConfig(
     target_modules=text_linear_targets,
 )
 
-base_model.gradient_checkpointing_enable()
+base_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 base_model.enable_input_require_grads()
 model = get_peft_model(base_model, peft_config)
 logger.info("✓ LoRA Adapter Attached across %d text linear targets:", len(text_linear_targets))

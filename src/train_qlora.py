@@ -112,7 +112,13 @@ def load_gemma4_model(model_path: Path):
     )
 
     num_gpus = torch.cuda.device_count()
-    max_memory = {i: "16.5GiB" for i in range(num_gpus)} if num_gpus > 1 else None
+    if num_gpus == 4:
+        # Give GPU 0 extra headroom (~9 GiB free) for embeddings, activations and loss orchestration
+        max_memory = {0: "13.0GiB", 1: "17.0GiB", 2: "17.0GiB", 3: "17.0GiB"}
+    elif num_gpus > 1:
+        max_memory = {i: "16.0GiB" for i in range(num_gpus)}
+    else:
+        max_memory = None
     device_map = "balanced" if num_gpus > 1 else "auto"
 
     try:
@@ -211,7 +217,7 @@ def train(
         target_modules=text_linear_targets,
     )
     if hasattr(model, "gradient_checkpointing_enable"):
-        model.gradient_checkpointing_enable()
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     model = get_peft_model(model, peft_config)
