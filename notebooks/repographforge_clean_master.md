@@ -455,8 +455,8 @@ tokenizer = AutoTokenizer.from_pretrained(str(MODEL_PATH), local_files_only=True
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-# Phase 1.1–1.4: Tokenize with MAX_LEN = 2048 (safeguards Gemma 4's 256k logits matrix from OOM)
-MAX_LEN = 2048
+# Cap MAX_LEN at 2560 so the 256k-vocab logits tensor never exceeds 2.5 GiB!
+MAX_LEN = 2560
 raw_records = []
 with open(TRAJECTORIES_FILE, "r", encoding="utf-8") as f:
     for line in f:
@@ -477,16 +477,16 @@ for rec in raw_records:
 
 logger.info("✓ Tokenized %d trajectories (dropped %d > %d tokens).", len(kept), dropped_overflow, MAX_LEN)
 
-# Mandatory Phase 1.2 Gate: Verify and print 3 decoded samples BEFORE loading the 31B model!
 verify_and_print_samples(kept, tokenizer, num_samples_to_print=3)
 tokenized_ds = Dataset.from_list(kept)
 
+# Asymmetric memory allocation: Gives GPU 0 massive headroom (~10 GiB free) while ensuring
+# total capacity (75 GiB) easily fits the 62.5 GB model with zero layers offloaded to meta!
 num_gpus = torch.cuda.device_count()
 if num_gpus == 4:
-    # Give GPU 0 massive headroom (~12 GiB free) for Gemma 4's 256k logits matrix
-    max_memory = {0: "10.0GiB", 1: "18.0GiB", 2: "18.0GiB", 3: "18.0GiB"}
+    max_memory = {0: "12.0GiB", 1: "21.0GiB", 2: "21.0GiB", 3: "21.0GiB"}
 elif num_gpus > 1:
-    max_memory = {0: "12.0GiB", 1: "18.0GiB"}
+    max_memory = {0: "12.0GiB", 1: "21.0GiB"}
 else:
     max_memory = None
 
@@ -516,7 +516,7 @@ peft_config = LoraConfig(
     target_modules=text_linear_targets,
 )
 
-base_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+base_model.gradient_checkpointing_enable()
 base_model.enable_input_require_grads()
 model = get_peft_model(base_model, peft_config)
 logger.info("✓ LoRA Adapter Attached across %d text linear targets:", len(text_linear_targets))

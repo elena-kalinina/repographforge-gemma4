@@ -113,10 +113,11 @@ def load_gemma4_model(model_path: Path):
 
     num_gpus = torch.cuda.device_count()
     if num_gpus == 4:
-        # Give GPU 0 massive headroom (~12 GiB free) for Gemma 4's 256k logits matrix
-        max_memory = {0: "10.0GiB", 1: "18.0GiB", 2: "18.0GiB", 3: "18.0GiB"}
+        # Give GPU 0 massive headroom (~10 GiB free) while ensuring
+        # total capacity (75 GiB) easily fits the 62.5 GB model with zero layers offloaded to meta!
+        max_memory = {0: "12.0GiB", 1: "21.0GiB", 2: "21.0GiB", 3: "21.0GiB"}
     elif num_gpus > 1:
-        max_memory = {0: "12.0GiB", 1: "18.0GiB"}
+        max_memory = {0: "12.0GiB", 1: "21.0GiB"}
     else:
         max_memory = None
     device_map = "balanced" if num_gpus > 1 else "auto"
@@ -160,7 +161,7 @@ def train(
     output_adapter_dir: Path,
     learning_rate: float = 1e-4,
     num_epochs: int = 2,
-    max_seq_length: int = 2048,
+    max_seq_length: int = 2560,
 ) -> None:
     import torch
     import torch.nn as nn
@@ -217,7 +218,7 @@ def train(
         target_modules=text_linear_targets,
     )
     if hasattr(model, "gradient_checkpointing_enable"):
-        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        model.gradient_checkpointing_enable()
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     model = get_peft_model(model, peft_config)
@@ -284,7 +285,7 @@ def main() -> None:
     )
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate (Phase 4.1 default: 1e-4)")
     parser.add_argument("--epochs", type=int, default=2, help="Training epochs (Phase 4.1 default: 2)")
-    parser.add_argument("--max-seq-len", type=int, default=2048, help="Max sequence length (default: 2048)")
+    parser.add_argument("--max-seq-len", type=int, default=2560, help="Max sequence length (default: 2560)")
     args = parser.parse_args()
 
     dataset_path = args.dataset_path
