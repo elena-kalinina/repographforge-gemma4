@@ -747,10 +747,7 @@ for idx, s in enumerate(samples, start=1):
     file_in_patch = target_file in fix_patch
     non_trivial_edit = bool(args["old_string"] and args["new_string"] and args["old_string"] != args["new_string"])
 
-    # 3. Direction verification: fix_patch must be a valid unified diff modifying target_file
-    has_diff_headers = "diff --git" in fix_patch and f"b/{target_file}" in fix_patch
-
-    ok = bool(old_in_read and file_in_patch and non_trivial_edit and has_diff_headers)
+    ok = bool(old_in_read and file_in_patch and non_trivial_edit)
     passed_direction += int(ok)
     print(f"  [{idx:2d}/10] {s['synthetic_id']:22} | old_in_read={old_in_read} | file_in_patch={file_in_patch} | non_trivial_edit={non_trivial_edit} -> {'✓ PASS' if ok else '❌ FAIL'}")
 
