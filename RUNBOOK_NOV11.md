@@ -15,9 +15,41 @@ day. Part C is Nov 12. If Part B runs long, cut from §B4 (marked OPTIONAL), nev
 F6: five of nine declared tools diverged from the harness. Corrected in the repo; none of
 it is in your Kaggle notebooks yet.
 
+### A0. After a session restart — what you do and do not need
+
+**Data preparation notebook: no prerequisites.** Cell 8A imports only `json` and `re`,
+creates its own directories, and auto-partitions `train_tasks.jsonl` from the competition
+input when it is missing. It needs no ADK, no transformers patch, no graph data, no GPU —
+so Ryan's Sections 1–3 are **not** required here. Running data-prep Cell 1 first is
+harmless and costs seconds, but 8A does not depend on it.
+
+- [ ] **Cell 0 (NEW)** — run first. Reports which `.jsonl` survived the restart, whether
+      each still contains stale arguments, and whether `real_tools.json`, `chat_format.py`
+      and the receipt are present.
+
+**The one thing that may not survive:** `sft_scaled.jsonl` is produced by
+`src/teacher_rollouts.py`, a GPU/LLM job that is **not** in either notebook. If `/kaggle/
+working` was cleared, 8A rebuilds the grounded 115 but nothing rebuilds the synthetic
+~184, and Cell 8C will have only the grounded file to rewrite. For the paper this blocks
+nothing — run the sequence on what exists and state the subset. For Dec 2 it becomes a
+choice between regenerating the synthetic set and training grounded-only, and
+grounded-only was already Stage 4's ablation.
+
+**Master notebook: yes, you need Ryan's Sections 1–3 and the transformers fix.** Unlike
+data prep, these are real dependencies:
+
+- [ ] **Cell 1** — installs `swegemma` / `adk_eval_core` / `adk_submission` from the
+      wheelhouse. Cell 0F imports `swegemma.tools`; without this it cannot run at all.
+- [ ] **Cell 2** — transformers 5.13.1 decorator patch and torchao disarm. Cells 0C and 0F
+      both construct an `AutoTokenizer`, which fails without it.
+- [ ] **Cell 3** — Ryan's Sections 2 & 3, paths and graph utilities. Cells 0C/0F do not
+      strictly need it; Cell 6 does, and it is cheap. Run it.
+
+Only then 4 → 4B → 0F → 0C → 6.
+
 ### A1. Data preparation notebook
 
-Run order is **8A → 8C → 8B → 9**, which is not the notebook's own order. 8B is a gate and
+Run order is **Cell 0 → 8A → 8C → 8B → 9**, which is not the notebook's own order. 8B is a gate and
 should see the final artefact, not an intermediate. 8C does not touch `edit_file` or
 `read_file`, which is all 8B inspects, so this reordering cannot change 8B's verdict — it
 just means the verdict is about the file you will actually train on.

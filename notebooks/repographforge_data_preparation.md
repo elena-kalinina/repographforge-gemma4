@@ -30,6 +30,77 @@ This notebook guide organizes the complete **data preparation, anti-leakage part
 
 > **Pro-Tip:** Run Cells 1 and 2 on **Accelerator: None (CPU)** to preserve 100% of your weekly GPU quota!
 
+#### Cell 0: `[Restart check]` What Survived the Session Restart
+
+> **Run this first after any session restart.** `/kaggle/working` may or may not have
+> survived. Cell 8A regenerates `sft_real_train.jsonl` from the competition input in
+> seconds, but `sft_scaled.jsonl` comes from `src/teacher_rollouts.py` — a GPU/LLM job
+> that is **not** in this notebook. If it is gone, Cell 8C has nothing to rewrite and the
+> synthetic ~62% of the training set is gone with it.
+
+```python
+import json
+from pathlib import Path
+
+WORKING_DIR = Path("/kaggle/working")
+TRAJ = WORKING_DIR / "data/trajectories"
+SPLITS = WORKING_DIR / "data/splits"
+
+DATA_DIR = Path("/kaggle/input/competitions/gemma-4-developer-agent")
+if not DATA_DIR.exists():
+    DATA_DIR = Path("/kaggle/input/gemma-4-developer-agent")
+
+print("=" * 68)
+print("RESTART SURVIVAL CHECK")
+print("=" * 68)
+print(f"  competition input : {DATA_DIR}  exists={DATA_DIR.exists()}")
+print(f"  tasks.jsonl       : {(DATA_DIR / 'tasks.jsonl').exists()}")
+print()
+
+def _count(p):
+    try:
+        return sum(1 for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip())
+    except Exception:
+        return 0
+
+found = {}
+for name in ("sft_real_train.jsonl", "sft_scaled.jsonl", "sft_combined.jsonl",
+             "sft_verified.jsonl"):
+    p = TRAJ / name
+    found[name] = _count(p) if p.exists() else None
+    if p.exists():
+        blob = p.read_text(encoding="utf-8")
+        stale = [t for t in ('"node_id"', '"top_k"', '"description"') if t in blob]
+        print(f"  ✓ {name:<24} {found[name]:>5} records"
+              + (f"   STALE ARGS: {stale}" if stale else "   (already F6-clean)"))
+    else:
+        print(f"  ✗ {name:<24} ABSENT")
+
+print(f"\n  splits/train_tasks.jsonl : {(SPLITS / 'train_tasks.jsonl').exists()}")
+print(f"  real_tools.json          : {(WORKING_DIR / 'real_tools.json').exists()}")
+print(f"  chat_format.py           : {(WORKING_DIR / 'chat_format.py').exists()}")
+print(f"  receipt                  : {(WORKING_DIR / '.tool_schema_verified.json').exists()}")
+
+print("\n" + "=" * 68)
+if found.get("sft_scaled.jsonl"):
+    print("  sft_scaled.jsonl SURVIVED. Run 8A -> 8C -> 8B -> 9 as planned.")
+else:
+    print("  sft_scaled.jsonl IS GONE. It comes from src/teacher_rollouts.py (GPU),")
+    print("  not from this notebook, so 8A/8C cannot rebuild it.")
+    print()
+    print("  For the PAPER (Nov 11-12) this does not block anything: run 8A -> 8C ->")
+    print("  8B -> 9 on the grounded 115 and report the 8C counts for that subset,")
+    print("  saying so explicitly.")
+    print()
+    print("  For TRAINING (Dec 2) you now choose: regenerate the synthetic set, or")
+    print("  train grounded-only. Grounded-only was already Stage 4 of the Dec 2 plan")
+    print("  as an ablation, and STATUS_REVIEW flags the 62% unverified synthetic")
+    print("  majority as a liability — so losing it is not purely a loss.")
+print("=" * 68)
+```
+
+---
+
 #### Cell 1: Environment Paths & Directory Setup
 ```python
 import os
