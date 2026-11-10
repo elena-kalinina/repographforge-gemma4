@@ -52,7 +52,53 @@ that a five-minute CPU assertion would have surfaced. Budget the checks, not the
       - **F2 is FIXED**: preamble renders at **1,110 tokens**, declarations present.
       - `submit_patch_tool` / `edit_file_tool` in the undeclared list confirm the
         harness wraps tools as `<name>_tool`, which Cell 0D exploits.
-- [ ] **RUN Cell 0D** to settle `node_id`. Blocking.
+- [x] **RUN Cell 0D / 0E** (2026-11-10). `node_id` **CONFIRMED WRONG**.
+      `swegemma/tools/graph.py` documents:
+      ```
+      get_code_neighbors(ctx, node, edge_type=None, ...)
+        node: Dotted symbol name or suffix of the function, method, or class node
+              (e.g. 'pkg.module.Class.method', 'Class.method', or 'parse_request')
+        edge_type: Optional edge relation filter (e.g. 'calls'; default None)
+      ```
+      We declare `node_id` plus a `direction` enum (`in`/`out`/`both`) that the harness
+      has no concept of. **Both parameters of a graph tool are wrong**, and
+      `DEFAULT_SYSTEM_PROMPT` orders the model to call a graph tool *first*.
+      Cell 0E also located the registry: `swegemma/tools/__init__.py` re-exports all
+      nine tools as callables. Cell 0C missed it because it is a module namespace, not
+      a module-level list.
+- [ ] **RUN Cell 0F** to derive all nine schemas from `inspect.signature` + docstrings
+      rather than hand-editing them. Blocking. It also sets `real_tools`, so re-running
+      Cell 0C afterwards turns the receipt from `inconclusive` into `clean`/`mismatch`.
+
+### 1.5 The training data carries the wrong parameter name too — NEW, BLOCKING
+Fixing the schemas is necessary and **not sufficient**. The trajectory generators emit
+the rejected argument name directly into the supervised text:
+
+- `src/build_real_sft.py:219` — `"arguments": {"node_id": anchor_id}`
+- `src/teacher_rollouts.py:271` — `"arguments": {"node_id": anchor}`
+
+So every grounded and synthetic trajectory *teaches* the call the sandbox rejects. The
+causal chain for the score-0 run is then complete and needs no further hypothesis:
+
+1. `DEFAULT_SYSTEM_PROMPT` orders graph-first localization.
+2. Training data demonstrates `get_code_subgraph(node_id=...)` on every example.
+3. The harness rejects the argument; the tool returns an error.
+4. The policy retries or proceeds blind; the 15-call budget drains.
+5. `submit_patch` runs on an unmodified tree → patch submitted, nothing resolved.
+
+Tasks:
+- [ ] Fix both generators to the real parameter name once Cell 0F confirms it for
+      `get_code_subgraph` as well as `get_code_neighbors`.
+- [ ] Rewrite the existing `.jsonl` on Kaggle — the data directories here hold only
+      `.gitkeep`, so the trajectories live in the Kaggle working set and must be
+      rewritten in place, not regenerated from this repo.
+- [ ] Re-check: `grep -c '"node_id"' data/trajectories/*.jsonl` must return 0 before
+      training.
+- [ ] `TOOL_RENDER_PROBES` contains `"node_id"`. Once the schemas change, that probe
+      stops appearing in rendered text and `render()` raises a **false** F2 failure.
+      Update the probes in the same edit as the schemas.
+- [ ] Update `DEFAULT_SYSTEM_PROMPT`: it says *"because the exact node ID is unknown"*,
+      which teaches the wrong vocabulary. The harness wants a dotted symbol name.
 - [ ] Record every mismatch found. If any parameter name differed, that is very likely the
       whole explanation for "6/14 submitted, score 0" — `edit_file` rejecting the call,
       then `submit_patch` on an unmodified tree.

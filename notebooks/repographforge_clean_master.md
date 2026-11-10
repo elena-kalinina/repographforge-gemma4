@@ -40,6 +40,7 @@ This guide implements the complete, error-proof sequence from `DIAGNOSIS.md` and
 │            *** BLOCKING — writes the receipt train_sft.py requires *** │
 │  [Cell 0D] Phase 0.2 drill-down: run only if 0C flags a parameter      │
 │  [Cell 0E] Phase 0.2: real graph-tool signatures + the tool registry   │
+│  [Cell 0F] Phase 0.2 RESOLUTION: derive COMPETITION_TOOLS from harness │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
 ┌───────────────────────────────────▼────────────────────────────────────┐
@@ -1587,6 +1588,159 @@ print("    Fix COMPETITION_TOOLS to match, re-run Cell 0C, then train.")
 print("  - If a live registry turned up above, set `real_tools = <it>` at the top")
 print("    of Cell 0C and re-run: the outcome becomes clean/mismatch rather than")
 print("    inconclusive, and the gate stops needing TOOL_SCHEMA_ACK.")
+print("=" * 72)
+```
+
+---
+
+#### Cell 0F: `[Phase 0.2 RESOLUTION]` Generate `COMPETITION_TOOLS` From the Live Harness
+
+> **The mismatch is confirmed.** `swegemma/tools/graph.py` documents
+> `get_code_neighbors(ctx, node, edge_type=None, ...)` — *"node: Dotted symbol name or
+> suffix of the function, method, or class node"*. We declare `node_id`, and a
+> `direction` parameter with an `in`/`out`/`both` enum the harness has no concept of.
+> Both parameters of a graph tool are wrong, and the system prompt orders the model to
+> call a graph tool **first**.
+
+> **Do not hand-edit the schemas.** Hand-transcription is the defect. `swegemma.tools`
+> re-exports all nine tools as callables, so the schemas can be *derived* from
+> `inspect.signature` plus the docstrings. That is what this cell does.
+
+```python
+# =============================================================================
+# Cell 0F — Generate COMPETITION_TOOLS from the live harness, mechanically.
+#
+# Cell 0E found the registry: swegemma/tools/__init__.py re-exports all nine
+# tools as plain callables. Cell 0C never found it because it is a module
+# namespace, not a module-level list.
+#
+# The get_code_neighbors docstring settles the open question:
+#     node: Dotted symbol name or suffix ('pkg.module.Class.method', ...)
+# We declare `node_id`. We also declare `direction` with an in/out/both enum;
+# the harness takes `edge_type`. Both parameters of a graph tool are wrong.
+#
+# Do NOT hand-edit COMPETITION_TOOLS to fix this. Hand-transcription is what
+# produced the defect. This cell derives the schemas from inspect.signature
+# and the docstrings, prints them, and writes them to disk.
+# =============================================================================
+import inspect, json, re, sys
+from pathlib import Path
+sys.path.insert(0, "/kaggle/working")
+from chat_format import COMPETITION_TOOLS
+
+import swegemma.tools as T
+
+OUR = {}
+for t in COMPETITION_TOOLS:
+    f = t.get("function", t)
+    params = (f.get("parameters") or {})
+    OUR[f["name"]] = (set((params.get("properties") or {})), set(params.get("required") or []))
+
+# Parameters the harness injects and the model never supplies.
+INJECTED = {"ctx", "self", "cls", "context", "workspace", "sandbox", "graph", "state"}
+
+PY2JSON = {str: "string", int: "integer", float: "number", bool: "boolean",
+           list: "array", dict: "object"}
+
+def _docstring_args(fn):
+    """Pull the Google-style `Args:` block into {param: description}."""
+    doc = inspect.getdoc(fn) or ""
+    out, cur = {}, None
+    in_args = False
+    for ln in doc.split("\n"):
+        if re.match(r"\s*Args:\s*$", ln):
+            in_args = True
+            continue
+        if in_args and re.match(r"\s*(Returns|Raises|Yields|Examples?):\s*$", ln):
+            break
+        if not in_args:
+            continue
+        m = re.match(r"\s{0,8}(\w+)\s*(?:\([^)]*\))?:\s*(.*)$", ln)
+        if m:
+            cur = m.group(1)
+            out[cur] = m.group(2).strip()
+        elif cur and ln.strip():
+            out[cur] += " " + ln.strip()
+    return out
+
+def _json_type(ann):
+    if ann is inspect.Parameter.empty:
+        return "string"
+    for py, js in PY2JSON.items():
+        if ann is py:
+            return js
+    s = str(ann)
+    for py, js in PY2JSON.items():
+        if py.__name__ in s:
+            return js
+    return "string"
+
+generated, report = [], []
+for name in OUR:
+    fn = getattr(T, name, None)
+    if fn is None:
+        report.append(f"  ✗ {name}: NOT exported by swegemma.tools")
+        continue
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError) as e:
+        report.append(f"  ✗ {name}: signature unavailable ({e!r})")
+        continue
+    docs = _docstring_args(fn)
+    props, required = {}, []
+    for pname, p in sig.parameters.items():
+        if pname in INJECTED or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        props[pname] = {"type": _json_type(p.annotation),
+                        "description": docs.get(pname, "")}
+        if p.default is inspect.Parameter.empty:
+            required.append(pname)
+    generated.append({"type": "function", "function": {
+        "name": name,
+        "description": (inspect.getdoc(fn) or "").split("\n")[0],
+        "parameters": {"type": "object", "properties": props, "required": required},
+    }})
+    ours_props, ours_req = OUR[name]
+    only_harness = sorted(set(props) - ours_props)
+    only_ours = sorted(ours_props - set(props))
+    mark = "✓" if not only_harness and not only_ours else "✗"
+    report.append(f"  {mark} {name}{sig}")
+    if only_harness:
+        report.append(f"      harness-only : {only_harness}")
+    if only_ours:
+        report.append(f"      ours-only    : {only_ours}  <-- the model is trained to send these")
+
+print("=" * 72)
+print("LIVE SIGNATURES vs COMPETITION_TOOLS")
+print("=" * 72)
+print("\n".join(report))
+
+out = Path("/kaggle/working/real_tools.json")
+out.write_text(json.dumps(generated, indent=2))
+print(f"\n✓ Generated {len(generated)} schemas -> {out}")
+
+# Make Cell 0C's diff authoritative instead of inconclusive.
+real_tools = [getattr(T, n) for n in OUR if getattr(T, n, None) is not None]
+print(f"✓ `real_tools` set ({len(real_tools)} callables). Re-run Cell 0C now:")
+print("    the receipt becomes clean/mismatch instead of inconclusive.")
+
+print("\n" + "=" * 72)
+print("GENERATED SCHEMAS (paste over COMPETITION_TOOLS in src/chat_format.py)")
+print("=" * 72)
+print(json.dumps(generated, indent=4))
+
+print("\n" + "=" * 72)
+print("TWO THINGS THAT MUST CHANGE WITH THE SCHEMAS")
+print("=" * 72)
+print("  1. TOOL_RENDER_PROBES still contains 'node_id'. Once the schemas use the")
+print("     real parameter name, that probe no longer appears in rendered text and")
+print("     render() will raise a FALSE F2 failure. Update the probes in the same")
+print("     edit as the schemas.")
+print("  2. The training data carries the wrong name too. Both generators emit")
+print("     `\"arguments\": {\"node_id\": ...}` (build_real_sft.py:219,")
+print("     teacher_rollouts.py:271), so every trajectory teaches the rejected")
+print("     call. Rewriting the schemas alone does not fix the dataset — see the")
+print("     rewrite pass in TRAINING_FIX_PLAN_DEC2.md Stage 1.5.")
 print("=" * 72)
 ```
 
