@@ -2431,6 +2431,154 @@ if n_unknown:
 
 ### PART 4: PACKAGING & LEADERBOARD SUBMISSION
 
+---
+
+#### Cell 12A: `[Paper §2.3]` Per-Task Forensics From the Score-0 Eval Traces
+
+> **This is the corroboration F6 needs.** §5.6 argues that mis-declared tool parameters
+> account for "patches submitted, nothing resolved" — but argues it from the schemas and
+> the data, not from what the agent actually did. The traces in `traces/` are what the
+> agent actually did. If graph calls fail first and the budget drains behind them, F6 is
+> corroborated rather than inferred.
+>
+> Run **Part 1 first** and paste its output: trace schemas vary and Part 2's extraction
+> needs to know the shape before it can be trusted.
+
+```python
+CELL_12A_VERSION = "v1 (2026-11-10) — schema discovery"
+print(f"CELL 12A {CELL_12A_VERSION}\n")
+
+import json
+from pathlib import Path
+
+# Find the traces directory wherever the eval wrote it.
+CANDIDATES = [Path("/kaggle/working/traces"), Path("/kaggle/working/logs/traces"),
+              Path("/kaggle/working/eval/traces"), Path("/kaggle/working")]
+TRACES = next((p for p in CANDIDATES if p.exists() and list(p.glob("trace_*.json"))), None)
+if TRACES is None:
+    hits = list(Path("/kaggle/working").rglob("trace_*.json"))
+    TRACES = hits[0].parent if hits else None
+print(f"traces dir: {TRACES}")
+files = sorted(TRACES.glob("trace_*.json")) if TRACES else []
+print(f"found {len(files)} trace file(s)\n")
+
+if files:
+    sample = json.loads(files[0].read_text(encoding="utf-8"))
+    def shape(o, depth=0, path="$"):
+        pad = "  " * depth
+        if isinstance(o, dict):
+            print(f"{pad}{path} dict[{len(o)}] keys={list(o)[:14]}")
+            for k, v in list(o.items())[:8]:
+                if isinstance(v, (dict, list)) and depth < 3:
+                    shape(v, depth + 1, f"{path}.{k}")
+                elif depth < 3:
+                    prev = repr(v)[:70]
+                    print(f"{pad}  {path}.{k} = {prev}")
+        elif isinstance(o, list):
+            print(f"{pad}{path} list[{len(o)}]")
+            if o and depth < 3:
+                shape(o[0], depth + 1, f"{path}[0]")
+    print(f"--- schema of {files[0].name} ---")
+    shape(sample)
+    print(f"\n--- first 1200 chars ---\n{files[0].read_text(encoding='utf-8')[:1200]}")
+```
+
+---
+
+#### Cell 12B: `[Paper §2.3]` Build the Per-Task Table
+
+> Run after 12A confirms the schema. The extraction probes generically rather than
+> assuming a layout, and prints what it could not find instead of silently reporting zero
+> — which is failure F5 and the mistake this table exists to correct.
+
+```python
+CELL_12B_VERSION = "v1 (2026-11-10) — per-task extraction"
+print(f"CELL 12B {CELL_12B_VERSION}\n")
+
+import json, re
+from pathlib import Path
+
+CANDIDATES = [Path("/kaggle/working/traces"), Path("/kaggle/working/logs/traces"),
+              Path("/kaggle/working/eval/traces"), Path("/kaggle/working")]
+TRACES = next((p for p in CANDIDATES if p.exists() and list(p.glob("trace_*.json"))), None)
+if TRACES is None:
+    hits = list(Path("/kaggle/working").rglob("trace_*.json"))
+    TRACES = hits[0].parent if hits else None
+
+GRAPH_TOOLS = {"get_code_subgraph", "get_code_neighbors", "search_similar_code"}
+ERROR_SIGNS = ("error", "traceback", "unexpected keyword", "invalid", "failed",
+               "not found", "missing", "exception", "typeerror", "validationerror")
+
+def walk(o):
+    """Yield every dict in the structure, at any depth."""
+    if isinstance(o, dict):
+        yield o
+        for v in o.values():
+            yield from walk(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from walk(v)
+
+rows, unknown = [], []
+for f in sorted(TRACES.glob("trace_*.json")) if TRACES else []:
+    data = json.loads(f.read_text(encoding="utf-8"))
+    task = f.stem.replace("trace_", "")
+    calls, errors = [], []
+    for d in walk(data):
+        name = d.get("name") or (d.get("function") or {}).get("name") if isinstance(d.get("function"), dict) else d.get("name")
+        if isinstance(name, str) and re.fullmatch(r"[a-z_]{4,30}", name):
+            args = d.get("arguments") or (d.get("function") or {}).get("arguments") if isinstance(d.get("function"), dict) else d.get("arguments")
+            calls.append((name, args))
+        blob = " ".join(str(v) for k, v in d.items()
+                        if k in ("content", "output", "result", "error", "observation", "text")
+                        and isinstance(v, (str, int, float)))
+        low = blob.lower()
+        if blob and any(sig in low for sig in ERROR_SIGNS):
+            errors.append(blob[:160])
+
+    names = [n for n, _ in calls]
+    first_tool = names[0] if names else None
+    n_graph = sum(1 for n in names if n in GRAPH_TOOLS)
+    graph_first = first_tool in GRAPH_TOOLS if first_tool else None
+    n_edit = names.count("edit_file")
+    n_submit = names.count("submit_patch")
+    # Did the first graph call produce an error-looking observation?
+    first_graph_err = None
+    for i, n in enumerate(names):
+        if n in GRAPH_TOOLS:
+            first_graph_err = bool(errors)
+            break
+    rows.append(dict(task=task, calls=len(names), first=first_tool, graph_first=graph_first,
+                     n_graph=n_graph, n_edit=n_edit, n_submit=n_submit,
+                     n_err=len(errors), first_err=(errors[0] if errors else "")))
+    if not names:
+        unknown.append(f.name)
+
+print(f"{'task':<18}{'calls':>6}{'first tool':>20}{'graph':>6}{'edit':>5}{'submit':>7}{'errs':>6}")
+print("-" * 70)
+for r in rows:
+    print(f"{r['task']:<18}{r['calls']:>6}{str(r['first']):>20}{r['n_graph']:>6}"
+          f"{r['n_edit']:>5}{r['n_submit']:>7}{r['n_err']:>6}")
+
+n = max(1, len(rows))
+print(f"\nAcross {len(rows)} task(s):")
+print(f"  opened with a graph tool : {sum(1 for r in rows if r['graph_first'])}/{len(rows)}")
+print(f"  called edit_file at all  : {sum(1 for r in rows if r['n_edit'])}/{len(rows)}")
+print(f"  called submit_patch      : {sum(1 for r in rows if r['n_submit'])}/{len(rows)}")
+print(f"  submitted with NO edit   : {sum(1 for r in rows if r['n_submit'] and not r['n_edit'])}/{len(rows)}"
+      "   <-- F6's predicted signature")
+print(f"  mean tool calls per task : {sum(r['calls'] for r in rows)/n:.1f}")
+if unknown:
+    print(f"\n  ⚠ {len(unknown)} trace(s) yielded no recognisable tool calls: {unknown[:5]}")
+    print("    The extraction is probing generically; paste 12A's schema so it can be fixed.")
+print("\n  First error-looking observation per task (truncated):")
+for r in rows:
+    if r['first_err']:
+        print(f"    {r['task']:<18} {r['first_err'][:110]}")
+```
+
+---
+
 #### Cell 12: `[Section 6 from Ryan's Notebook]` Package `submission.zip`
 *Run unchanged from Ryan's notebook to create and validate `/kaggle/working/submission.zip`.*
 

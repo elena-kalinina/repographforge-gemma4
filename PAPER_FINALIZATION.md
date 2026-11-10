@@ -36,7 +36,15 @@ point at in a log or a table. The reframe's whole value is that it's checkable.
 - [ ] **2.2** Recompute historical submission rates with the strict metric. Produce the
       pair **(legacy count, strict resolve rate)** for every checkpoint in Table 2. This
       is the F5 evidence.
-- [ ] **2.3** From the score-0 run's traces: per task, did `edit_file` succeed, was the
+- [~] **2.3** Traces LOCATED on Kaggle (2026-11-10): `traces/trace_<task>.json` for all 14
+      holdout tasks, plus `<task>.log`. Cells 12A (schema discovery) and 12B (per-task
+      table) added to the master notebook. 12B reports the F6 signature directly:
+      *submitted with no successful edit*. Run 12A first and paste the schema — the
+      extraction probes generically and must be checked before its numbers are trusted.
+- [ ] **2.4 AT RISK:** no training logs found alongside the traces. If the loss curves are
+      not recoverable, §7.2's figure cannot be built and the section must stand on §7.1's
+      checkpoint table plus the single loss figure quoted in the abstract. Decide early.
+- [ ] **2.3 (original wording)** From the score-0 run's traces: per task, did `edit_file` succeed, was the
       submitted diff non-empty, did it apply. Even without test execution this
       distinguishes "never edited" from "edited wrongly" — and it's the F4/F5 evidence.
 - [ ] **2.4** Pull the loss curves for every run into one figure. **This is the paper's
