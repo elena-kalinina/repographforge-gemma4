@@ -59,8 +59,13 @@ just means the verdict is about the file you will actually train on.
 - [ ] **Cell 8C** — NEW, paste, run. Rewrites every `.jsonl` in place for the tools 8A
       does not regenerate — chiefly `sft_scaled.jsonl`, whose generator is not in this
       notebook. Backs each file up to `.pre_f6`. Idempotent.
-      Expect: a per-file count, then a breakdown like `184x submit_patch: dropped
-      ['description']`. Ends `✓ All trajectories conform to the real tool interface.`
+      Expect: a per-file count, the number of string-encoded calls, a breakdown of
+      rewrites, and the distinct `submit_patch` argument names. Ends `✓ All trajectories
+      conform to the real tool interface.` If it reports offenders instead, it now names
+      file, line, tool and raw arguments — paste that rather than the traceback.
+- [ ] **Capture the 8C v2 output verbatim.** Two numbers go straight into the paper:
+      the string-encoded call count (§5.4) and the full `submit_patch` argument-name
+      table (§5.4 has a TODO holding the v1 lower bound of seven names).
 - [ ] **Cell 8B** — run (unchanged). 10/10 must pass.
 - [ ] **Cell 9** — re-paste if you have not since the merge-bug fix, run. Check the
       grounded/synthetic split it prints; the >50% synthetic warning is expected.
