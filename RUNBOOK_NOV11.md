@@ -63,9 +63,12 @@ just means the verdict is about the file you will actually train on.
       rewrites, and the distinct `submit_patch` argument names. Ends `✓ All trajectories
       conform to the real tool interface.` If it reports offenders instead, it now names
       file, line, tool and raw arguments — paste that rather than the traceback.
-- [ ] **Capture the 8C v2 output verbatim.** Two numbers go straight into the paper:
-      the string-encoded call count (§5.4) and the full `submit_patch` argument-name
-      table (§5.4 has a TODO holding the v1 lower bound of seven names).
+- [ ] **Capture the 8C v3 output verbatim.** Four numbers go into §5.4, which holds a
+      TODO for them: the string-encoded call count, the full `submit_patch` argument-name
+      table, the rewrite breakdown, and the quarantine count with reasons.
+- [ ] **Check the quarantine count against the dataset floor** (master Cell 6 asserts
+      `len(kept) >= 60`). Quarantined records are dropped, so a large count moves the
+      Dec 2 plan toward grounded-only.
 - [ ] **Cell 8B** — run (unchanged). 10/10 must pass.
 - [ ] **Cell 9** — re-paste if you have not since the merge-bug fix, run. Check the
       grounded/synthetic split it prints; the >50% synthetic warning is expected.

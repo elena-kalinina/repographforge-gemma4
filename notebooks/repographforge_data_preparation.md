@@ -852,8 +852,22 @@ print(f"\n✓ Phase 2.2 Gate PASSED: {passed_direction}/{len(samples)} label dif
 > other than `node_id`, and it *reports* non-conforming calls with file, line and raw
 > arguments instead of raising a bare `AssertionError`.
 >
-> Your `.pre_f6` backups from the v1 run hold the true originals — v2 will not overwrite
+> Your `.pre_f6` backups hold the true originals — later versions will not overwrite
 > them, so re-running is safe.
+>
+> **v3 (2026-11-10).** v2 reported 22 calls it could not parse. Cause: their arguments are
+> JSON strings containing **raw newlines** inside string values (multi-line code), which
+> `json.loads` rejects in strict mode. `strict=False` accepts them.
+>
+> Reading those 22 exposed a larger problem. The model-generated trajectories invented
+> their own `edit_file` schema — `path` / `old_content` / `code` / `replacements` in place
+> of `filepath` / `old_string` / `new_string`. v3 maps the renames. Shapes with **no
+> faithful mapping** — an insert (`insert_after` + `code`), or a multi-edit
+> (`replacements` with more than one entry) — are not guessed at: the whole record is
+> written to `quarantined_f6.jsonl` and dropped, with a reason. Fabricating a repair would
+> put invented supervision into the training set, which is worse than training on less.
+>
+> Check the quarantine count against the dataset floor of 60 in master Cell 6.
 
 ```python
 import json, shutil
@@ -862,146 +876,207 @@ from pathlib import Path
 # Self-identifying, because the repo and this notebook are separate copies and the only
 # way to know which one you just ran is for it to say so. If the banner below does not
 # print, you are running an older cell body and nothing here applies.
-CELL_8C_VERSION = "v2 (2026-11-10) — handles string-encoded arguments"
+CELL_8C_VERSION = "v3 (2026-11-10) — lenient JSON, edit_file key map, quarantine"
 print("=" * 68)
 print(f"CELL 8C {CELL_8C_VERSION}")
 print("=" * 68)
 
 TRAJECTORIES_DIR = Path("/kaggle/working/data/trajectories")
+QUARANTINE = TRAJECTORIES_DIR / "quarantined_f6.jsonl"
 
-# v1 skipped any tool call whose `arguments` was a JSON STRING rather than a dict, then
-# asserted on the result — so it rewrote 402 calls, missed the string-encoded ones, and
-# failed its own check. Models emit arguments as a string in the OpenAI convention and
-# the teacher-rollout parser preserves whatever it got, so both forms are in this corpus.
-# v2 coerces, fixes, and writes back in the ORIGINAL form, then reports offenders instead
-# of asserting blindly.
+# v2 found 22 calls it could not parse. Cause: the arguments are JSON strings containing
+# RAW newlines inside string values (multi-line code), which json.loads rejects in strict
+# mode. `strict=False` accepts them.
+#
+# Reading those 22 revealed a second, larger problem. The model-generated trajectories
+# invented their own `edit_file` schema — `path`/`old_content`/`code`/`replacements`
+# instead of `filepath`/`old_string`/`new_string`. Key renames are applied below. Shapes
+# with no faithful mapping (an insert, or a multi-edit) are NOT guessed at: the whole
+# record is quarantined, because fabricating a repair is worse than training on less.
+
+FILE_KEYS = {"path": "filepath", "file": "filepath", "file_path": "filepath",
+             "filename": "filepath"}
+EDIT_KEYS = {**FILE_KEYS,
+             "old_content": "old_string", "old": "old_string", "old_str": "old_string",
+             "new_content": "new_string", "new": "new_string", "new_str": "new_string"}
+UNMAPPABLE_EDIT = ("insert_after", "insert_before", "line_number", "append")
+
+
+class Unmappable(Exception):
+    pass
+
 
 def _fix_args(name, args):
-    """Return (new_args, what_changed) for one tool call. `args` is a dict."""
+    """Return (new_args, what_changed). Raises Unmappable when no faithful repair exists."""
+    changed = []
     if name == "get_code_subgraph":
         if "node_id" in args:
             v = args.pop("node_id")
             args["nodes"] = v if isinstance(v, list) else [v]
             args.pop("hops", None)
-            return args, "get_code_subgraph: node_id -> nodes[]"
-        if "nodes" in args and not isinstance(args["nodes"], list):
+            changed.append("node_id -> nodes[]")
+        elif "nodes" in args and not isinstance(args["nodes"], list):
             args["nodes"] = [args["nodes"]]
-            return args, "get_code_subgraph: nodes scalar -> list"
-        if "nodes" not in args:
-            # Some other key entirely. Take the first string-ish value we can find.
+            changed.append("nodes scalar -> list")
+        elif "nodes" not in args:
             for k in ("node", "symbol", "symbol_id", "anchor", "query", "name"):
                 if k in args:
                     v = args.pop(k)
                     args["nodes"] = v if isinstance(v, list) else [v]
                     args.pop("hops", None)
-                    return args, f"get_code_subgraph: {k} -> nodes[]"
-            args["nodes"] = []
-            return args, "get_code_subgraph: no recognizable arg -> nodes=[]"
-    if name == "get_code_neighbors":
-        changed = []
+                    changed.append(f"{k} -> nodes[]")
+                    break
+            else:
+                raise Unmappable("get_code_subgraph: no symbol argument")
+    elif name == "get_code_neighbors":
         if "node_id" in args:
             args["node"] = args.pop("node_id"); changed.append("node_id -> node")
         if "direction" in args:
             args.pop("direction"); changed.append("dropped direction")
-        if changed:
-            return args, "get_code_neighbors: " + ", ".join(changed)
-    if name == "search_similar_code" and "top_k" in args:
-        args["k"] = args.pop("top_k")
-        return args, "search_similar_code: top_k -> k"
-    if name == "submit_patch" and args:
-        return {}, f"submit_patch: dropped {sorted(args)}"
-    return args, None
+    elif name == "search_similar_code":
+        if "top_k" in args:
+            args["k"] = args.pop("top_k"); changed.append("top_k -> k")
+    elif name == "submit_patch":
+        if args:
+            return {}, f"submit_patch: dropped {sorted(args)}"
+    elif name in ("read_file", "write_file"):
+        for src, dst in FILE_KEYS.items():
+            if src in args and dst not in args:
+                args[dst] = args.pop(src); changed.append(f"{src} -> {dst}")
+    elif name == "edit_file":
+        for bad in UNMAPPABLE_EDIT:
+            if bad in args:
+                raise Unmappable(f"edit_file: '{bad}' is an insert, not a replace")
+        if "replacements" in args:
+            reps = args.pop("replacements")
+            if not isinstance(reps, list) or len(reps) != 1:
+                raise Unmappable(f"edit_file: {len(reps) if isinstance(reps, list) else '?'} replacements")
+            r = reps[0]
+            old = next((r[k] for k in ("old", "old_content", "old_string", "old_str") if k in r), None)
+            new = next((r[k] for k in ("new", "new_content", "new_string", "new_str") if k in r), None)
+            if old is None or new is None:
+                raise Unmappable("edit_file: replacement missing old/new")
+            args["old_string"], args["new_string"] = old, new
+            changed.append("replacements[1] -> old_string/new_string")
+        for src, dst in EDIT_KEYS.items():
+            if src in args and dst not in args:
+                args[dst] = args.pop(src); changed.append(f"{src} -> {dst}")
+        if "code" in args and "new_string" not in args:
+            raise Unmappable("edit_file: 'code' with no old_string to replace")
+        args.pop("code", None)
+        if not {"filepath", "old_string", "new_string"} <= set(args):
+            raise Unmappable(f"edit_file: missing {sorted({'filepath','old_string','new_string'} - set(args))}")
+    return args, (f"{name}: " + ", ".join(changed)) if changed else None
 
 
-def _walk(rec, fn_cb):
-    for msg in rec.get("messages", []):
-        for tc in (msg.get("tool_calls") or []):
-            fn_cb(tc.get("function", tc))
+def _parse(raw):
+    """-> (dict, was_string). Raises Unmappable if it is neither."""
+    if isinstance(raw, dict):
+        return raw, False
+    if isinstance(raw, str):
+        if not raw.strip():
+            return {}, True
+        return json.loads(raw, strict=False), True        # strict=False: raw newlines
+    raise Unmappable(f"arguments is {type(raw).__name__}")
 
 
-total_files = total_calls = total_fixed = n_string_form = 0
-summary, submit_arg_names = {}, {}
+totals = dict(files=0, calls=0, strings=0, fixed=0, quarantined=0)
+summary, submit_args, quarantine_reasons, quarantined_records = {}, {}, {}, []
+
 for f in sorted(TRAJECTORIES_DIR.glob("*.jsonl")):
+    if f.name == QUARANTINE.name:
+        continue
     backup = f.with_suffix(".jsonl.pre_f6")
     if not backup.exists():
         shutil.copy2(f, backup)
-    out, n_fixed = [], 0
+    kept, n_fixed, n_quar = [], 0, 0
     for line in f.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         rec = json.loads(line)
-
-        def _fix(fn):
-            global n_fixed, total_calls, n_string_form
-            total_calls += 1
-            name, raw = fn.get("name"), fn.get("arguments")
-            was_string = isinstance(raw, str)
-            if was_string:
-                n_string_form += 1
+        drop_reason = None
+        for msg in rec.get("messages", []):
+            for tc in (msg.get("tool_calls") or []):
+                fn = tc.get("function", tc)
+                name = fn.get("name")
+                totals["calls"] += 1
                 try:
-                    raw = json.loads(raw) if raw.strip() else {}
-                except Exception:
-                    return                      # unparseable; leave it, report later
-            if not isinstance(raw, dict):
-                return
-            if name == "submit_patch" and raw:
-                for k in raw:
-                    submit_arg_names[k] = submit_arg_names.get(k, 0) + 1
-            new_args, what = _fix_args(name, dict(raw))
-            if what:
-                fn["arguments"] = json.dumps(new_args) if was_string else new_args
-                n_fixed += 1
-                summary[what] = summary.get(what, 0) + 1
+                    raw, was_string = _parse(fn.get("arguments"))
+                except (Unmappable, ValueError) as e:
+                    drop_reason = drop_reason or f"{name}: unparseable ({e})"
+                    continue
+                if was_string:
+                    totals["strings"] += 1
+                if name == "submit_patch" and raw:
+                    for k in raw:
+                        submit_args[k] = submit_args.get(k, 0) + 1
+                try:
+                    new_args, what = _fix_args(name, dict(raw))
+                except Unmappable as e:
+                    drop_reason = drop_reason or str(e)
+                    continue
+                if what:
+                    fn["arguments"] = json.dumps(new_args) if was_string else new_args
+                    n_fixed += 1
+                    summary[what] = summary.get(what, 0) + 1
+        if drop_reason:
+            n_quar += 1
+            quarantine_reasons[drop_reason] = quarantine_reasons.get(drop_reason, 0) + 1
+            quarantined_records.append(json.dumps({"_source": f.name, "_reason": drop_reason, **rec}))
+        else:
+            kept.append(json.dumps(rec, ensure_ascii=False))
+    f.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    totals["files"] += 1
+    totals["fixed"] += n_fixed
+    totals["quarantined"] += n_quar
+    print(f"  {f.name:<28} {len(kept):>4} kept, {n_fixed:>4} calls rewritten, {n_quar:>3} quarantined")
 
-        _walk(rec, _fix)
-        out.append(json.dumps(rec, ensure_ascii=False))
-    f.write_text("\n".join(out) + "\n", encoding="utf-8")
-    total_files += 1
-    total_fixed += n_fixed
-    print(f"  {f.name:<28} {len(out):>4} records, {n_fixed:>4} calls rewritten")
+if quarantined_records:
+    QUARANTINE.write_text("\n".join(quarantined_records) + "\n", encoding="utf-8")
 
-print(f"\n{total_files} file(s), {total_calls} tool calls seen "
-      f"({n_string_form} string-encoded), {total_fixed} rewritten")
+print(f"\n{totals['files']} file(s), {totals['calls']} tool calls "
+      f"({totals['strings']} string-encoded), {totals['fixed']} rewritten, "
+      f"{totals['quarantined']} records quarantined")
 for what, n in sorted(summary.items(), key=lambda kv: -kv[1]):
     print(f"    {n:>5}x  {what}")
-if submit_arg_names:
-    print(f"\n  submit_patch argument names found ({len(submit_arg_names)} distinct) "
-          f"— this is F4 in the data, worth recording for the paper:")
-    for k, n in sorted(submit_arg_names.items(), key=lambda kv: -kv[1]):
+if submit_args:
+    print(f"\n  submit_patch argument names ({len(submit_args)} distinct) — F4 in the data:")
+    for k, n in sorted(submit_args.items(), key=lambda kv: -kv[1]):
         print(f"    {n:>5}x  {k}")
+if quarantine_reasons:
+    print(f"\n  Quarantined to {QUARANTINE.name} (no faithful repair exists):")
+    for r, n in sorted(quarantine_reasons.items(), key=lambda kv: -kv[1]):
+        print(f"    {n:>5}x  {r}")
 
-# ---- validation: report, do not merely assert -------------------------------
+# ---- validation ------------------------------------------------------------
 offenders = []
 for f in sorted(TRAJECTORIES_DIR.glob("*.jsonl")):
+    if f.name == QUARANTINE.name:
+        continue
     for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
-        rec = json.loads(line)
-
-        def _check(fn):
-            name, raw = fn.get("name"), fn.get("arguments")
-            if isinstance(raw, str):
+        for msg in json.loads(line).get("messages", []):
+            for tc in (msg.get("tool_calls") or []):
+                fn = tc.get("function", tc)
+                name = fn.get("name")
                 try:
-                    raw = json.loads(raw) if raw.strip() else {}
-                except Exception:
-                    offenders.append((f.name, i, name, "UNPARSEABLE", repr(fn.get("arguments"))[:90]))
-                    return
-            if not isinstance(raw, dict):
-                offenders.append((f.name, i, name, "NOT A DICT", repr(raw)[:90]))
-                return
-            if name == "submit_patch" and raw:
-                offenders.append((f.name, i, name, "has arguments", repr(raw)[:90]))
-            if name == "get_code_subgraph" and not isinstance(raw.get("nodes"), list):
-                offenders.append((f.name, i, name, "nodes not a list", repr(raw)[:90]))
-
-        _walk(rec, _check)
+                    raw, _ = _parse(fn.get("arguments"))
+                except Exception as e:
+                    offenders.append((f.name, i, name, f"unparseable: {e}")); continue
+                if name == "submit_patch" and raw:
+                    offenders.append((f.name, i, name, f"has arguments {sorted(raw)}"))
+                if name == "get_code_subgraph" and not isinstance(raw.get("nodes"), list):
+                    offenders.append((f.name, i, name, f"nodes not a list: {sorted(raw)}"))
+                if name == "edit_file" and not {"filepath", "old_string", "new_string"} <= set(raw):
+                    offenders.append((f.name, i, name, f"keys {sorted(raw)}"))
 
 if offenders:
     print(f"\n  ✗ {len(offenders)} call(s) still non-conforming. First 10:")
     for o in offenders[:10]:
-        print(f"      {o[0]}:{o[1]}  {o[2]}  [{o[3]}]  {o[4]}")
+        print(f"      {o[0]}:{o[1]}  {o[2]}  [{o[3]}]")
     raise AssertionError(f"{len(offenders)} non-conforming tool calls; see above")
-print("\n✓ All trajectories conform to the real tool interface.")
+print("\n✓ All remaining trajectories conform to the real tool interface.")
 ```
 
 ---
