@@ -1,0 +1,196 @@
+First SFT training (complete_sft_training_milestone) Oct 30
+
+[22:16:06] INFO - Note: NumExpr detected 48 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+[22:16:06] INFO - NumExpr defaulting to 16 threads.
+[22:16:07] INFO - TensorFlow version 2.20.0 available.
+[22:16:07] INFO - JAX version 0.7.2 available.
+[22:16:08] INFO - Active Transformers: 5.13.1
+[22:16:08] INFO - Base Model:      2 (31B Intact)
+[22:16:08] INFO - Training Data:   sft_verified.jsonl
+[22:16:08] INFO - Output Adapter:  /kaggle/working/submission/adapters/main_lora
+[22:16:08] INFO - Loading Tokenizer...
+[22:16:47] INFO - Prepared 112 training trajectories.
+[22:16:51] INFO - Loading Gemma 4 31B with balanced GPU allocation (~15.8 GB per GPU)...
+Loading weights: 100%|██████████████████████| 1188/1188 [08:36<00:00,  2.30it/s]
+[22:25:30] INFO - Discovered 410 text linear targets for LoRA.
+[22:25:33] INFO - ✓ LoRA Adapter Attached with Gradient Checkpointing:
+trainable params: 244,858,880 || all params: 31,517,945,392 || trainable%: 0.7769
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[22:25:33] INFO - 🚀 STARTING TRAINING (3 Epochs over 112 trajectories)...
+{'loss': '2.046', 'grad_norm': '4.734', 'learning_rate': '0.0001997', 'epoch': '0.3571'}
+{'loss': '0.911', 'grad_norm': '5.578', 'learning_rate': '0.0001885', 'epoch': '0.7143'}
+{'loss': '0.6508', 'grad_norm': '4.353', 'learning_rate': '0.0001632', 'epoch': '1.071'}
+{'loss': '0.5514', 'grad_norm': '5.899', 'learning_rate': '0.0001278', 'epoch': '1.429'}
+{'loss': '0.4782', 'grad_norm': '4.815', 'learning_rate': '8.795e-05', 'epoch': '1.786'}
+{'loss': '0.445', 'grad_norm': '2.786', 'learning_rate': '5e-05', 'epoch': '2.143'}
+{'loss': '0.4104', 'grad_norm': '3.265', 'learning_rate': '2.006e-05', 'epoch': '2.5'}
+{'loss': '0.3935', 'grad_norm': '1.161', 'learning_rate': '2.906e-06', 'epoch': '2.857'}
+{'train_runtime': '1863', 'train_samples_per_second': '0.18', 'train_steps_per_second': '0.023', 'train_loss': '0.7195', 'epoch': '3'}
+100%|███████████████████████████████████████████| 42/42 [31:02<00:00, 44.35s/it]
+[22:56:36] INFO - Exporting final LoRA adapter
+
+2nd attempt after fix (sft_attempt_2) Oct 31
+
+[18:48:38] INFO - Note: NumExpr detected 48 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+[18:48:38] INFO - NumExpr defaulting to 16 threads.
+[18:48:39] INFO - TensorFlow version 2.20.0 available.
+[18:48:39] INFO - JAX version 0.7.2 available.
+[18:48:40] INFO - Active Transformers: 5.13.1
+[18:48:40] INFO - Base Model:      2
+[18:48:40] INFO - Training Data:   sft_verified.jsonl
+[18:48:40] INFO - Output Adapter:  /kaggle/working/submission/adapters/main_lora
+[18:48:40] INFO - Loading Tokenizer...
+[18:49:18] INFO - Prepared 112 training trajectories with native tool tokens.
+[18:49:23] INFO - Loading Gemma 4 31B across 4x L4 GPUs (bfloat16, balanced memory)...
+Loading weights: 100%|██████████████████████| 1188/1188 [00:13<00:00, 85.83it/s]
+[18:49:39] INFO - Discovered 410 text linear targets for LoRA.
+[18:49:42] INFO - ✓ LoRA Adapter Attached with Gradient Checkpointing:
+trainable params: 244,858,880 || all params: 31,517,945,392 || trainable%: 0.7769
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[18:49:42] INFO - 🚀 STARTING SFT v2 TRAINING (3 Epochs over 112 trajectories)...
+{'loss': '2.877', 'grad_norm': '18.28', 'learning_rate': '0.0001997', 'epoch': '0.3571'}
+{'loss': '1.267', 'grad_norm': '37.21', 'learning_rate': '0.0001885', 'epoch': '0.7143'}
+{'loss': '0.9554', 'grad_norm': '13.59', 'learning_rate': '0.0001632', 'epoch': '1.071'}
+{'loss': '0.8416', 'grad_norm': '4.752', 'learning_rate': '0.0001278', 'epoch': '1.429'}
+{'loss': '0.7727', 'grad_norm': '3.609', 'learning_rate': '8.795e-05', 'epoch': '1.786'}
+{'loss': '0.7127', 'grad_norm': '1.522', 'learning_rate': '5e-05', 'epoch': '2.143'}
+{'loss': '0.616', 'grad_norm': '2.863', 'learning_rate': '2.006e-05', 'epoch': '2.5'}
+{'loss': '0.5906', 'grad_norm': '13.93', 'learning_rate': '2.906e-06', 'epoch': '2.857'}
+{'train_runtime': '1254', 'train_samples_per_second': '0.268', 'train_steps_per_second': '0.033', 'train_loss': '1.057', 'epoch': '3'}
+100%|███████████████████████████████████████████| 42/42 [20:54<00:00, 29.86s/it]
+[19:10:36] INFO - Exporting final native-tool LoRA adapter to /kaggle/working/submission/adapters/main_lora...
+
+
+1st RFT - 1st submission (milestone_4_completed_with_rft) Nov 3
+
+[16:52:27] INFO - Note: NumExpr detected 48 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+[16:52:27] INFO - NumExpr defaulting to 16 threads.
+[16:52:29] INFO - TensorFlow version 2.20.0 available.
+[16:52:29] INFO - JAX version 0.7.2 available.
+[16:52:36] INFO - Loaded 4 verifier-curated Best-of-N trajectories.
+[16:52:36] INFO - Loading Gemma 4 31B across 4 GPUs...
+Loading weights: 100%|██████████████████████| 1188/1188 [09:17<00:00,  2.13it/s]
+[17:01:55] INFO - Loading SFT v2 weights for continued RFT alignment...
+[17:01:59] INFO - ✓ Model trainable parameters:
+trainable params: 244,858,880 || all params: 31,517,945,392 || trainable%: 0.7769
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[17:01:59] INFO - 🚀 STARTING RFT ALIGNMENT PASS (2 Epochs, grad_accum=2, lr=5e-5)...
+{'loss': '1.79', 'grad_norm': '239.7', 'learning_rate': '0', 'epoch': '0.5'}    
+{'loss': '1.609', 'grad_norm': '121', 'learning_rate': '5e-05', 'epoch': '1'}   
+{'loss': '1.173', 'grad_norm': '27.1', 'learning_rate': '3.75e-05', 'epoch': '1.5'}
+{'loss': '1.083', 'grad_norm': '7.291', 'learning_rate': '1.25e-05', 'epoch': '2'}
+{'train_runtime': '29.25', 'train_samples_per_second': '0.273', 'train_steps_per_second': '0.137', 'train_loss': '1.414', 'epoch': '2'}
+100%|█████████████████████████████████████████████| 4/4 [00:29<00:00,  7.31s/it]
+[17:02:29] INFO - Exporting final aligned adapter to /kaggle/working/submission/adapters/main_lora...
+[17:02:31] INFO - ✓ RFT ALIGNMENT COMPLETE! All adapter files verified.
+
+
+Scaled dataset - version 20 Nov 4, submission 2
+
+SFT
+[16:31:15] INFO - ✓ LoRA Adapter Attached across 410 text linear projections:
+trainable params: 244,858,880 || all params: 31,517,945,392 || trainable%: 0.7769
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[16:31:15] INFO - 🚀 STARTING SCALED SFT TRAINING (3 Epochs over 230 trajectories)...
+{'loss': '2.689', 'grad_norm': '9.15', 'learning_rate': '0.00016', 'epoch': '0.1739'}
+{'loss': '1.073', 'grad_norm': '8.32', 'learning_rate': '0.0001988', 'epoch': '0.3478'}
+{'loss': '0.7881', 'grad_norm': '1.948', 'learning_rate': '0.0001941', 'epoch': '0.5217'}
+{'loss': '0.6962', 'grad_norm': '7.355', 'learning_rate': '0.000186', 'epoch': '0.6957'}
+{'loss': '0.6472', 'grad_norm': '4.65', 'learning_rate': '0.0001747', 'epoch': '0.8696'}
+{'loss': '0.5918', 'grad_norm': '1.402', 'learning_rate': '0.0001606', 'epoch': '1.035'}
+{'loss': '0.4855', 'grad_norm': '0.9466', 'learning_rate': '0.0001444', 'epoch': '1.209'}
+{'loss': '0.4889', 'grad_norm': '0.7454', 'learning_rate': '0.0001265', 'epoch': '1.383'}
+{'loss': '0.4507', 'grad_norm': '1.076', 'learning_rate': '0.0001077', 'epoch': '1.557'}
+{'loss': '0.5015', 'grad_norm': '3.239', 'learning_rate': '8.853e-05', 'epoch': '1.73'}
+{'loss': '0.445', 'grad_norm': '4.158', 'learning_rate': '6.983e-05', 'epoch': '1.904'}
+{'loss': '0.4463', 'grad_norm': '1.018', 'learning_rate': '5.223e-05', 'epoch': '2.07'}
+{'loss': '0.3673', 'grad_norm': '3.18', 'learning_rate': '3.638e-05', 'epoch': '2.243'}
+{'loss': '0.3386', 'grad_norm': '0.6022', 'learning_rate': '2.285e-05', 'epoch': '2.417'}
+{'loss': '0.3285', 'grad_norm': '0.7931', 'learning_rate': '1.215e-05', 'epoch': '2.591'}
+{'loss': '0.3174', 'grad_norm': '3.163', 'learning_rate': '4.66e-06', 'epoch': '2.765'}
+{'loss': '0.304', 'grad_norm': '0.8652', 'learning_rate': '6.598e-07', 'epoch': '2.939'}
+{'train_runtime': '3337', 'train_samples_per_second': '0.207', 'train_steps_per_second': '0.026', 'train_loss': '0.6377', 'epoch': '3'}
+100%|███████████████████████████████████████████| 87/87 [55:37<00:00, 38.36s/it]
+[17:26:53] INFO - Exporting final scaled adapter to /kaggle/working/submission/adapters/main_lora...
+
+
+RFT
+[17:36:43] INFO - Note: NumExpr detected 48 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+[17:36:43] INFO - NumExpr defaulting to 16 threads.
+[17:36:44] INFO - TensorFlow version 2.20.0 available.
+[17:36:44] INFO - JAX version 0.7.2 available.
+Generating train split: 4 examples [00:00, 2290.72 examples/s]
+Map: 100%|████████████████████████████████| 4/4 [00:00<00:00, 294.14 examples/s]
+[17:36:52] INFO - Loaded 4 verifier-curated Best-of-N trajectories.
+[17:36:52] INFO - Loading Gemma 4 31B across 4 GPUs...
+Loading weights: 100%|██████████████████████| 1188/1188 [00:14<00:00, 83.32it/s]
+[17:37:08] INFO - Loading SFT v2 weights for continued RFT alignment...
+[17:37:12] INFO - ✓ Model trainable parameters:
+trainable params: 244,858,880 || all params: 31,517,945,392 || trainable%: 0.7769
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[17:37:12] INFO - 🚀 STARTING RFT ALIGNMENT PASS (2 Epochs, grad_accum=2, lr=5e-5)...
+{'loss': '1.353', 'grad_norm': '3.857', 'learning_rate': '0', 'epoch': '0.5'}   
+{'loss': '1.263', 'grad_norm': '6.459', 'learning_rate': '5e-05', 'epoch': '1'} 
+{'loss': '0.8834', 'grad_norm': '1.77', 'learning_rate': '3.75e-05', 'epoch': '1.5'}
+{'loss': '0.7692', 'grad_norm': '1.822', 'learning_rate': '1.25e-05', 'epoch': '2'}
+{'train_runtime': '27.31', 'train_samples_per_second': '0.293', 'train_steps_per_second': '0.146', 'train_loss': '1.067', 'epoch': '2'}
+100%|█████████████████████████████████████████████| 4/4 [00:27<00:00,  6.83s/it]
+[17:37:40] INFO - Exporting final aligned adapter to /kaggle/working/submission/adapters/main_lora...
+[17:37:42] INFO - ✓ RFT ALIGNMENT COMPLETE! All adapter files verified.
+
+
+Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls
+
+[11:36:09] INFO - ✓ LoRA Adapter Attached across 410 text linear targets:
+trainable params: 244,858,880 || all params: 31,517,945,392 || trainable%: 0.7769
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[11:36:10] INFO - 🚀 STARTING SCALED SFT TRAINING (3 Epochs, 86 steps)...
+{'loss': '2.246', 'grad_norm': '3.327', 'learning_rate': '0.00016', 'epoch': '0.1739'}
+{'loss': '1.117', 'grad_norm': '7.613', 'learning_rate': '0.0001988', 'epoch': '0.3478'}
+{'loss': '0.7819', 'grad_norm': '8.164', 'learning_rate': '0.0001941', 'epoch': '0.5217'}
+{'loss': '0.683', 'grad_norm': '4.452', 'learning_rate': '0.000186', 'epoch': '0.6957'}
+{'loss': '0.606', 'grad_norm': '2.239', 'learning_rate': '0.0001747', 'epoch': '0.8696'}
+{'loss': '0.5194', 'grad_norm': '3.366', 'learning_rate': '0.0001606', 'epoch': '1.035'}
+{'loss': '0.4449', 'grad_norm': '2.497', 'learning_rate': '0.0001444', 'epoch': '1.209'}
+{'loss': '0.4591', 'grad_norm': '0.5762', 'learning_rate': '0.0001265', 'epoch': '1.383'}
+{'loss': '0.4099', 'grad_norm': '0.5976', 'learning_rate': '0.0001077', 'epoch': '1.557'}
+{'loss': '0.4574', 'grad_norm': '0.6012', 'learning_rate': '8.853e-05', 'epoch': '1.73'}
+{'loss': '0.4003', 'grad_norm': '0.6491', 'learning_rate': '6.983e-05', 'epoch': '1.904'}
+{'loss': '0.3645', 'grad_norm': '0.7166', 'learning_rate': '5.223e-05', 'epoch': '2.07'}
+{'loss': '0.2764', 'grad_norm': '16.94', 'learning_rate': '3.638e-05', 'epoch': '2.243'}
+{'loss': '0.2978', 'grad_norm': '0.7296', 'learning_rate': '2.285e-05', 'epoch': '2.417'}
+{'loss': '0.2663', 'grad_norm': '0.5116', 'learning_rate': '1.215e-05', 'epoch': '2.591'}
+{'loss': '0.2466', 'grad_norm': '0.5323', 'learning_rate': '4.66e-06', 'epoch': '2.765'}
+{'loss': '0.2604', 'grad_norm': '1.231', 'learning_rate': '6.598e-07', 'epoch': '2.939'}
+{'train_runtime': '3396', 'train_samples_per_second': '0.203', 'train_steps_per_second': '0.026', 'train_loss': '0.5711', 'epoch': '3'}
+100%|███████████████████████████████████████████| 87/87 [56:35<00:00, 39.03s/it]
+[12:32:46] INFO - Exp
+
+
+Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission
+
+✓ Phase 1.2 Gate PASSED: Assistant-only spans + EOT stop tokens verified!
+================================================================================
+Loading weights: 100%|██████████████████████| 1188/1188 [00:13<00:00, 85.42it/s]
+[18:32:48] INFO - ✓ LoRA Adapter Attached across 410 text linear targets:
+trainable params: 244,858,880 || all params: 31,517,945,392 || trainable%: 0.7769
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[18:32:48] INFO - 🚀 STARTING PHASE 4.1 SFT TRAINING (2 Epochs, lr=1e-4, max_len=2560)...
+{'loss': '1.253', 'grad_norm': '2.594', 'learning_rate': '0.0001', 'epoch': '0.1338'}
+{'loss': '0.603', 'grad_norm': '1.169', 'learning_rate': '9.881e-05', 'epoch': '0.2676'}
+{'loss': '0.4172', 'grad_norm': '1.204', 'learning_rate': '9.532e-05', 'epoch': '0.4013'}
+{'loss': '0.3418', 'grad_norm': '0.8873', 'learning_rate': '8.967e-05', 'epoch': '0.5351'}
+{'loss': '0.3281', 'grad_norm': '0.4639', 'learning_rate': '8.214e-05', 'epoch': '0.6689'}
+{'loss': '0.2336', 'grad_norm': '0.4659', 'learning_rate': '7.309e-05', 'epoch': '0.8027'}
+{'loss': '0.303', 'grad_norm': '1.168', 'learning_rate': '6.294e-05', 'epoch': '0.9365'}
+{'loss': '0.2379', 'grad_norm': '0.3869', 'learning_rate': '5.218e-05', 'epoch': '1.054'}
+{'loss': '0.2449', 'grad_norm': '0.6104', 'learning_rate': '4.132e-05', 'epoch': '1.187'}
+{'loss': '0.1961', 'grad_norm': '71.6', 'learning_rate': '3.087e-05', 'epoch': '1.321'}
+{'loss': '0.2398', 'grad_norm': '1.535', 'learning_rate': '2.132e-05', 'epoch': '1.455'}
+{'loss': '0.2114', 'grad_norm': '0.3834', 'learning_rate': '1.314e-05', 'epoch': '1.589'}
+{'loss': '0.2283', 'grad_norm': '0.3405', 'learning_rate': '6.699e-06', 'epoch': '1.722'}
+{'loss': '0.2065', 'grad_norm': '1.735', 'learning_rate': '2.314e-06', 'epoch': '1.856'}
+{'loss': '0.2148', 'grad_norm': '2.17', 'learning_rate': '1.903e-07', 'epoch': '1.99'}
+{'train_runtime': '7841', 'train_samples_per_second': '0.076', 'train_steps_per_second': '0.01', 'train_loss': '0.349', 'epoch': '2'}
+100%|████████████████████████████████████████| 76/76 [2:10:41<00:00, 103.18s/it]
+[20:43:32] INFO - ✓ SFT TRAINING COMPLETE! Adapter exported to /kaggle/working/submission/adapters/main_lora
