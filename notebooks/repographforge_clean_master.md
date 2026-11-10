@@ -1154,6 +1154,8 @@ from chat_format import (
     write_tool_schema_receipt, TOOL_SCHEMA_RECEIPT_PATH,
 )
 
+CELL_0C_VERSION = "v3 (2026-11-10) — writes the training gate receipt"
+print(f"CELL 0C {CELL_0C_VERSION}")
 print(f"chat_format version: {CHAT_FORMAT_VERSION}")
 OUR_NAMES = []
 for _t in COMPETITION_TOOLS:
@@ -1698,6 +1700,9 @@ print("=" * 72)
 # produced the defect. This cell derives the schemas from inspect.signature
 # and the docstrings, prints them, and writes them to disk.
 # =============================================================================
+CELL_0F_VERSION = "v2 (2026-11-10) — container-aware JSON typing, versioned output"
+print(f"CELL 0F {CELL_0F_VERSION}\n")
+
 import inspect, json, re, sys
 from pathlib import Path
 sys.path.insert(0, "/kaggle/working")

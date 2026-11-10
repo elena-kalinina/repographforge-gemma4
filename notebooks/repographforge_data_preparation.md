@@ -672,7 +672,9 @@ print(f"🎉 Created {len(synthesized)} synthetic tasks (with fix_patch + reprod
 import json, re
 from pathlib import Path
 
-print("=== PHASE 2.1b: BUILDING GROUNDED SFT TRAJECTORIES FROM 115 REAL TRAIN TASKS ===")
+CELL_8A_VERSION = "v2 (2026-11-10) — F6-corrected tool arguments"
+print(f"=== PHASE 2.1b {CELL_8A_VERSION} ===")
+print("=== BUILDING GROUNDED SFT TRAJECTORIES FROM 115 REAL TRAIN TASKS ===")
 
 WORKING_DIR = Path("/kaggle/working")
 SPLITS_DIR = WORKING_DIR / "data/splits"
@@ -856,6 +858,14 @@ print(f"\n✓ Phase 2.2 Gate PASSED: {passed_direction}/{len(samples)} label dif
 ```python
 import json, shutil
 from pathlib import Path
+
+# Self-identifying, because the repo and this notebook are separate copies and the only
+# way to know which one you just ran is for it to say so. If the banner below does not
+# print, you are running an older cell body and nothing here applies.
+CELL_8C_VERSION = "v2 (2026-11-10) — handles string-encoded arguments"
+print("=" * 68)
+print(f"CELL 8C {CELL_8C_VERSION}")
+print("=" * 68)
 
 TRAJECTORIES_DIR = Path("/kaggle/working/data/trajectories")
 
