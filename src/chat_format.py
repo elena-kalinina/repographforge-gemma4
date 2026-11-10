@@ -18,6 +18,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("chat_format")
 
+# Bump on every change. The Kaggle notebook carries its own `%%writefile` copy of this
+# file, so the two can drift; Cell 4B compares this string and refuses to proceed on a
+# mismatch. A stale copy silently reinstates F1 and F2, which is how four runs were lost.
+CHAT_FORMAT_VERSION = "2026-11-10.stage1"
+
 # --- F2 (silent preamble fallback) guards -------------------------------------------
 # Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
 # system-prompt preamble of ~1,830 tokens. A median below the preamble is arithmetically

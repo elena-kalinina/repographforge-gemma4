@@ -207,6 +207,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("chat_format")
 
+# Bump on every change. The Kaggle notebook carries its own `%%writefile` copy of this
+# file, so the two can drift; Cell 4B compares this string and refuses to proceed on a
+# mismatch. A stale copy silently reinstates F1 and F2, which is how four runs were lost.
+CHAT_FORMAT_VERSION = "2026-11-10.stage1"
+
 # --- F2 (silent preamble fallback) guards -------------------------------------------
 # Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
 # system-prompt preamble of ~1,830 tokens. A median below the preamble is arithmetically
@@ -821,13 +826,42 @@ sys.path.insert(0, "/kaggle/working")
 import chat_format
 importlib.reload(chat_format)
 
-REQUIRED = ["STRICT_TOOLS", "TOOL_RENDER_PROBES", "MASK_PATH_COUNTS",
-            "assert_tool_rendering_clean", "build_example", "verify_and_print_samples"]
+EXPECTED_VERSION = "2026-11-10.stage1"
+REQUIRED = ["CHAT_FORMAT_VERSION", "STRICT_TOOLS", "TOOL_RENDER_PROBES",
+            "MASK_PATH_COUNTS", "assert_tool_rendering_clean",
+            "build_example", "verify_and_print_samples"]
+
 missing = [n for n in REQUIRED if not hasattr(chat_format, n)]
-assert not missing, f"STALE chat_format.py — missing {missing}. Re-run Cell 4."
-assert chat_format.STRICT_TOOLS is True, "STRICT_TOOLS is off; tool-render failures will pass silently (F2)."
-print("✓ chat_format.py is current; STRICT_TOOLS enabled.")
-print(f"  tool render probes: {chat_format.TOOL_RENDER_PROBES}")
+got = getattr(chat_format, "CHAT_FORMAT_VERSION", "<pre-versioning>")
+
+if missing or got != EXPECTED_VERSION:
+    print("=" * 72)
+    print("STALE /kaggle/working/chat_format.py")
+    print("=" * 72)
+    print(f"  expected version : {EXPECTED_VERSION}")
+    print(f"  loaded version   : {got}")
+    if missing:
+        print(f"  missing symbols  : {missing}")
+    print(f"  file written at  : {getattr(chat_format, '__file__', '?')}")
+    print()
+    print("  CAUSE: this notebook's Cell 4 is an older copy. The repo markdown is a")
+    print("         guide; the cell you actually execute lives in this notebook and")
+    print("         does not update when the repo does.")
+    print()
+    print("  FIX:   1. Open src/chat_format.py in the repo.")
+    print("         2. Replace EVERYTHING in Cell 4 below the %%writefile line with it.")
+    print("         3. Run Cell 4, then re-run this cell.")
+    print()
+    print("  Do NOT skip this. A stale formatter silently reinstates F1 (stop token")
+    print("  unsupervised) and F2 (tool schemas dropped) with no error at training time.")
+    print("=" * 72)
+    raise SystemExit(1)
+
+assert chat_format.STRICT_TOOLS is True, "STRICT_TOOLS is off; tool-render failures pass silently (F2)."
+print(f"\u2713 chat_format.py is current (version {got}); STRICT_TOOLS enabled.")
+print(f"  loaded from      : {chat_format.__file__}")
+print(f"  tool probes      : {chat_format.TOOL_RENDER_PROBES}")
+print(f"  masking paths    : {chat_format.MASK_PATH_COUNTS}")
 ```
 
 ---
