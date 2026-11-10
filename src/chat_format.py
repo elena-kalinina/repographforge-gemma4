@@ -21,7 +21,7 @@ logger = logging.getLogger("chat_format")
 # Bump on every change. The Kaggle notebook carries its own `%%writefile` copy of this
 # file, so the two can drift; Cell 4B compares this string and refuses to proceed on a
 # mismatch. A stale copy silently reinstates F1 and F2, which is how four runs were lost.
-CHAT_FORMAT_VERSION = "2026-11-10.stage1b"
+CHAT_FORMAT_VERSION = "2026-11-10.stage1c"
 
 # --- F2 (silent preamble fallback) guards -------------------------------------------
 # Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
@@ -34,7 +34,10 @@ STRICT_TOOLS: bool = True
 
 # Substrings that MUST appear in rendered text when tools are declared. Drawn from the
 # tool schemas themselves, so they fail if the template ignores an unsupported `tools=`.
-TOOL_RENDER_PROBES = ("old_string", "node_id", "submit_patch")
+# "node_id" was a probe until 2026-11-10. It was removed when F6 was corrected: the
+# harness parameter is `node`, so probing for "node_id" would raise a FALSE F2 failure
+# against correct schemas. Probes must be drawn from the CURRENT declarations.
+TOOL_RENDER_PROBES = ("old_string", "nodes", "submit_patch")
 
 # Populated whenever a render could not attach tool declarations; surfaced by
 # `assert_tool_rendering_clean()` so a run cannot end without the failure being seen.
@@ -238,7 +241,9 @@ DEFAULT_SYSTEM_PROMPT = """You are an autonomous software engineering agent equi
 You have up to 15 tool calls. Spend them with discipline:
 1. LOCALIZE VIA GRAPH FIRST:
    - Start with `get_code_subgraph`, `get_code_neighbors`, or `search_similar_code` on the symbol or symptom named in the issue/traceback.
-   - If `get_code_subgraph` returns 0 nodes because the exact node ID is unknown, call `search_similar_code` to find the exact symbol and file path.
+   - Symbols are dotted paths or suffixes: 'pkg.module.Class.method', 'Class.method', or 'parse_request'.
+   - `get_code_subgraph(nodes=[...])` takes a LIST of symbols. `get_code_neighbors(node="...")` takes a single symbol.
+   - If `get_code_subgraph` returns 0 nodes because the exact symbol is unknown, call `search_similar_code(query="...")` to find the exact symbol and file path.
 2. READ TARGETED SPANS (AT MOST 3 FILES):
    - Read at most 3 files using `read_file(filepath, start_line, end_line)` on the 30-80 lines around the target symbol.
    - Prefer inspecting the callee/helper function that the subgraph points to over paging through large caller files.
@@ -247,22 +252,35 @@ You have up to 15 tool calls. Spend them with discipline:
    - If `edit_file` returns `FileEditError`, read the exact line range first and retry `edit_file`.
 4. TEST & SUBMIT (`submit_patch`):
    - If you have tool calls remaining after `edit_file` succeeds, run the relevant unit test with `run_command` (e.g. `pytest tests/test_... -k ...`) to verify your fix.
-   - Always finish with `submit_patch` once a valid edit is applied. Never call `submit_patch` before `edit_file` has succeeded."""
+   - Always finish with `submit_patch()` once a valid edit is applied. It takes NO arguments — it submits the current working-tree diff. Never call `submit_patch` before `edit_file` has succeeded."""
 
-# Phase 3.2: Exact 9 Competition Tool Schemas declared in `agent.yaml`
-COMPETITION_TOOLS: List[Dict[str, Any]] = [
+# --- F6: the tool interface -----------------------------------------------------------
+# These declarations were ORIGINALLY hand-transcribed and diverged from the harness in
+# five of nine tools (Phase 0.2, 2026-11-10). The transcription was internally consistent
+# — valid schema, rendered fine, learned faithfully — so nothing inside training could
+# detect it. The values below are taken from `inspect.signature` on the live callables in
+# `swegemma.tools` and are recorded here only as a FALLBACK.
+#
+# The authoritative path is `real_tools.json`, written by Cell 0F from the harness itself.
+# A copy drifts; a derivation cannot. Prefer the derivation whenever it is present.
+#
+# `ctx` is injected by the harness and never supplied by the model, so it is not declared.
+_FALLBACK_COMPETITION_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
             "name": "get_code_subgraph",
-            "description": "Extract the k-hop structural code dependency subgraph around a symbol or node_id.",
+            "description": "Extract the relationship graph (nodes and connecting edges) for a focal set of code elements.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "node_id": {"type": "string", "description": "Fully qualified symbol or node ID to query."},
-                    "hops": {"type": "integer", "description": "Number of hops (default: 2)."},
+                    "nodes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of dotted symbol paths or suffix names (e.g. ['pkg.mod.Class.method', 'helper_fn']) to include in the induced subgraph.",
+                    },
                 },
-                "required": ["node_id"],
+                "required": ["nodes"],
             },
         },
     },
@@ -270,14 +288,24 @@ COMPETITION_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_code_neighbors",
-            "description": "Get immediate caller and callee neighbors of a symbol in the repository code graph.",
+            "description": "Discover structural code graph neighbors (callers and callees) for a given code node.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "node_id": {"type": "string", "description": "Fully qualified symbol or node ID."},
-                    "direction": {"type": "string", "enum": ["in", "out", "both"]},
+                    "node": {
+                        "type": "string",
+                        "description": "Dotted symbol name or suffix of the function, method, or class node (e.g. 'pkg.module.Class.method', 'Class.method', or 'parse_request').",
+                    },
+                    "edge_type": {
+                        "type": "string",
+                        "description": "Optional edge relation filter (e.g. 'calls'; case-insensitive, default None for all edges).",
+                    },
+                    "max_neighbors": {
+                        "type": "integer",
+                        "description": "Maximum number of neighbors to return (default 50).",
+                    },
                 },
-                "required": ["node_id"],
+                "required": ["node"],
             },
         },
     },
@@ -285,12 +313,12 @@ COMPETITION_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "search_similar_code",
-            "description": "Search the repository for symbols or functions semantically similar to the query using node embeddings.",
+            "description": "Find code elements semantically similar to a query string.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Symbol name, error message, or code concept to search."},
-                    "top_k": {"type": "integer", "description": "Number of results to return (default: 5)."},
+                    "k": {"type": "integer", "description": "Number of results to return (default 10)."},
                 },
                 "required": ["query"],
             },
@@ -300,13 +328,13 @@ COMPETITION_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a specific line span of a file in the repository.",
+            "description": "Read a file from the repository, optionally restricted to a line range.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filepath": {"type": "string", "description": "Relative path to the file."},
-                    "start_line": {"type": "integer", "description": "1-indexed starting line number."},
-                    "end_line": {"type": "integer", "description": "1-indexed ending line number."},
+                    "filepath": {"type": "string", "description": "Repository-relative path to the file."},
+                    "start_line": {"type": "integer", "description": "First line to read (1-indexed, optional)."},
+                    "end_line": {"type": "integer", "description": "Last line to read (inclusive, optional)."},
                 },
                 "required": ["filepath"],
             },
@@ -316,13 +344,14 @@ COMPETITION_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Replace an exact string snippet (`old_string`) with `new_string` in a file.",
+            "description": "Replace an exact string in a file with new content.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filepath": {"type": "string", "description": "Relative path to the file to edit."},
-                    "old_string": {"type": "string", "description": "Exact existing lines to replace."},
-                    "new_string": {"type": "string", "description": "New replacement lines."},
+                    "filepath": {"type": "string", "description": "Repository-relative path to the file."},
+                    "old_string": {"type": "string", "description": "Exact existing text to replace, copied verbatim from read_file output."},
+                    "new_string": {"type": "string", "description": "Replacement text."},
+                    "allow_multiple": {"type": "boolean", "description": "Replace every occurrence rather than requiring a unique match (default false)."},
                 },
                 "required": ["filepath", "old_string", "new_string"],
             },
@@ -332,12 +361,12 @@ COMPETITION_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Write content to a file in the repository.",
+            "description": "Write a file in the repository, creating or overwriting it.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filepath": {"type": "string"},
-                    "content": {"type": "string"},
+                    "filepath": {"type": "string", "description": "Repository-relative path to the file."},
+                    "content": {"type": "string", "description": "Full file content to write."},
                 },
                 "required": ["filepath", "content"],
             },
@@ -347,11 +376,11 @@ COMPETITION_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Execute a shell command (such as `pytest`) inside the repository sandbox.",
+            "description": "Run a shell command in the repository sandbox and return its output.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "Shell command to run."},
+                    "command": {"type": "string", "description": "Shell command to execute, e.g. 'pytest tests/test_x.py -k name'."},
                 },
                 "required": ["command"],
             },
@@ -361,24 +390,41 @@ COMPETITION_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_status",
-            "description": "Check current git status and modified files in the sandbox.",
-            "parameters": {"type": "object", "properties": {}},
+            "description": "Report the current workspace status, including files modified so far.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {
         "type": "function",
         "function": {
             "name": "submit_patch",
-            "description": "Finalize and submit the current git diff patch for evaluation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "description": {"type": "string", "description": "Brief summary of the fix."},
-                },
-            },
+            "description": "Finalize and submit the current working-tree diff as the answer. Takes no arguments.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
 ]
+
+# Written by Cell 0F via inspect.signature over `swegemma.tools`. When present it wins.
+REAL_TOOLS_PATH = Path("/kaggle/working/real_tools.json")
+TOOLS_SOURCE = "fallback (hand-written, verified against Phase 0.2 signatures)"
+
+
+def _load_competition_tools() -> List[Dict[str, Any]]:
+    global TOOLS_SOURCE
+    try:
+        if REAL_TOOLS_PATH.exists():
+            data = json.loads(REAL_TOOLS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, list) and data and all(isinstance(d, dict) for d in data):
+                TOOLS_SOURCE = str(REAL_TOOLS_PATH)
+                logger.info("✓ Tool schemas derived from the harness: %s", REAL_TOOLS_PATH)
+                return data
+            logger.warning("%s present but malformed; using fallback schemas.", REAL_TOOLS_PATH)
+    except Exception as e:  # noqa: BLE001 - never let schema loading kill the import
+        logger.warning("Could not read %s (%r); using fallback schemas.", REAL_TOOLS_PATH, e)
+    return _FALLBACK_COMPETITION_TOOLS
+
+
+COMPETITION_TOOLS: List[Dict[str, Any]] = _load_competition_tools()
 
 
 def sanitize_user_prompt(content: str) -> str:

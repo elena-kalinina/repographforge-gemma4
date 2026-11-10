@@ -271,7 +271,7 @@ def sample_candidates_for_task(
             continue
         thought1, tc1 = parse_tool_call_from_message(m1, default_name="get_code_subgraph")
         if not tc1:
-            tc1 = {"name": "get_code_subgraph", "arguments": {"node_id": anchor}}
+            tc1 = {"name": "get_code_subgraph", "arguments": {"nodes": [anchor]}}
 
         msgs.append({
             "role": "assistant",
@@ -342,7 +342,7 @@ def sample_candidates_for_task(
                 "tool_calls": [{
                     "id": "call_4",
                     "type": "function",
-                    "function": {"name": "submit_patch", "arguments": {"description": f"Fix {anchor} in {target_file}"}},
+                    "function": {"name": "submit_patch", "arguments": {}},
                 }],
             })
 

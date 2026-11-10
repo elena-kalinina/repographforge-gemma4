@@ -216,7 +216,7 @@ def build_trajectory_from_real_task(
                     "type": "function",
                     "function": {
                         "name": "get_code_subgraph",
-                        "arguments": {"node_id": anchor_id},
+                        "arguments": {"nodes": [anchor_id]},
                     },
                 }
             ],
@@ -357,7 +357,7 @@ def build_trajectory_from_real_task(
                     "type": "function",
                     "function": {
                         "name": "submit_patch",
-                        "arguments": {"description": f"Fix issue {task.instance_id} in {filepath}"},
+                        "arguments": {},
                     },
                 }
             ],

@@ -268,7 +268,7 @@ def generate_teacher_trajectory(
                     "type": "function",
                     "function": {
                         "name": "get_code_subgraph",
-                        "arguments": {"node_id": anchor},
+                        "arguments": {"nodes": [anchor]},
                     },
                 }
             ],
@@ -336,7 +336,7 @@ def generate_teacher_trajectory(
                     "type": "function",
                     "function": {
                         "name": "submit_patch",
-                        "arguments": {"description": thoughts.get("final_summary", "Apply fix")},
+                        "arguments": {},
                     },
                 }
             ],
