@@ -78,12 +78,18 @@ Each gets a subsection: mechanism → the code → the signature → the fix →
 
 ## 4. One open question that changes F2's wording
 
+**RESOLVED 2026-11-10 (Cell 0C) — reading (a) is correct.** The preamble measures
+**1,110 tokens** against the real tokenizer, not the ~1,830 char/4 estimate used below.
+The median trajectory was 831 tokens, so at least half the training set was shorter than
+the preamble alone, which is impossible if it was present. The `tools=` render had been
+failing silently. F2 is now fixed: declarations render and appear in the text.
+
+Original wording, kept for the record:
+
 `src/chat_format.py` renders tool schemas inside a `try/except Exception: pass` that falls
 through to a no-tools render. The training log reports **299 kept, 5 dropped at
-MAX_LEN=2560**. The hand-measured preamble is ~1,830 tokens (tools ~1,473 + system ~357),
-which would leave ~730 tokens for a full SWE-bench problem statement plus subgraph JSON
-plus a numbered file span plus `edit_file` plus `submit_patch`. That many trajectories
-fitting is hard to reconcile with the preamble actually being present.
+MAX_LEN=2560**. That many trajectories fitting is hard to reconcile with the preamble
+actually being present.
 
 Two readings, both consequential, both cheap to settle:
 

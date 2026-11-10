@@ -133,6 +133,8 @@ Several conclusions depend on properties of the serving stack rather than our co
 - Turn delimiters are `<|turn>` and `<turn|>`; tool calls are delimited `<|tool_call>` … `<tool_call|>` and tool responses `<|tool_response>` … `<tool_response|>`, with `<|"|>` as the string delimiter.
 - **Tool responses are folded inside the preceding model turn rather than emitted as their own turn.** This is central to §5.1.
 - Trajectory token lengths: median 831, p90 1475, p95 1709, p99 2729, maximum 4367.
+- The eval-matched preamble — the 9 tool declarations plus the system prompt, rendered through `apply_chat_template(tools=...)` — measures **1,110 tokens**. This is the figure §5.2 turns on, and it is measured, not estimated from character counts.
+- All 9 tool *names* we declare appear in the harness source. The parameter `node_id`, required by both graph tools, appears in none of its 98 Python files; §5.2 and §9 treat this as unresolved rather than concluded.
 
 ---
 
@@ -194,9 +196,11 @@ return tokenizer.apply_chat_template(msgs, tokenize=False, ...)   # no tools
 
 The `except Exception: pass` makes the function **fail open**. If the template does not accept a `tools` argument, every training sequence is rendered without tool declarations and nothing reports it.
 
-**Signature, and how we detected it.** The detection is arithmetic rather than instrumented, which is itself the point. The tool schemas measure approximately 1,473 tokens and the system prompt approximately 357, a fixed preamble of roughly 1,830 tokens per example. The measured **median** trajectory length was 831 tokens (§4.4) — below the preamble alone. The preamble was therefore not present, and the fallback had been taken silently on every example.
+**Signature, and how we detected it.** The detection is arithmetic rather than instrumented, which is itself the point. Rendering a minimal message list with `tools=COMPETITION_TOOLS` against the real tokenizer produces a fixed preamble of **1,110 tokens** (measured; Phase 0.2). The measured **median** trajectory length was 831 tokens (§4.4) — below the preamble alone. At least half of all training examples were therefore shorter than the preamble they were supposed to contain, which is impossible if it was present. The fallback had been taken silently on every example.
 
-This also explains an observation that would otherwise be puzzling: at a 2,560-token cap, only **5 of 304** trajectories were dropped. With the preamble present, the p90 of 1,475 would have become roughly 3,300 and the majority would have been dropped.
+We note the margin honestly. Our first estimate of the preamble, obtained by dividing character counts by four, was roughly 1,830 tokens; the measured value is 1,110, an overestimate of 65%. The conclusion survives because 831 < 1,110, but it survives by less than we initially claimed, and we report the measured figure rather than the estimate. A paper about unverified claims is a poor place to leave one standing.
+
+This also explains an observation that would otherwise be puzzling: at a 2,560-token cap, only **5 of 304** trajectories were dropped. With the preamble present, the p90 of 1,475 would have become roughly 2,585 — above the cap — and a large fraction would have been dropped rather than five.
 
 **Interaction with length policy.** The pipeline used drop-on-overflow rather than truncation, on the correct reasoning that right-truncation silently deletes the `edit_file` and `submit_patch` turns that constitute the label. Drop-on-overflow is safe at a generous budget. Combined with a large fixed preamble and a reduced budget, it becomes a dataset filter that silently reshapes the training distribution toward short trajectories. We did not realise this failure mode — the preamble was absent, so almost nothing was dropped — but we report it because the combination is a live hazard in any pipeline that matches eval-time context and caps sequence length.
 
@@ -471,4 +475,4 @@ DONE<turn|>
 
 **Trajectory token lengths** (n = 304): median 831, p90 1475, p95 1709, p99 2729, max 4367. At the historical 1,536-token cap, 24 of 304 (7.9%) were truncated. At 8,192, none overflow.
 
-This distribution is what establishes F2 arithmetically: a median of 831 tokens is incompatible with a ~1,830-token preamble being present.
+This distribution is what establishes F2 arithmetically: a median of 831 tokens is incompatible with the measured 1,110-token preamble being present.

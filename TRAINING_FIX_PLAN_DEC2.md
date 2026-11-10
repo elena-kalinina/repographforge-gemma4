@@ -41,7 +41,18 @@ that a five-minute CPU assertion would have surfaced. Budget the checks, not the
       recorded mismatch, or an inconclusive verification without an explicit
       `TOOL_SCHEMA_ACK=1`. An acknowledgement cannot rescue a real mismatch.
       Covered by `tests/test_tool_schema_gate.py` (10 checks, offline).
-- [ ] **RUN Cell 0C on Kaggle.** Still outstanding; this is the blocking item.
+- [x] **RUN Cell 0C on Kaggle** (2026-11-10). Results:
+      - All 9 tool **names** present in the harness source (98 .py files scanned).
+      - `node_id` — the *required* parameter of `get_code_subgraph` and
+        `get_code_neighbors` — appears in **zero** harness .py files. Every other
+        required parameter we declare (`filepath`, `old_string`, `new_string`,
+        `command`, `patch`) is present. This is the live suspect.
+      - No importable tool registry found → `outcome=inconclusive`; the gate will
+        refuse training until Cell 0D resolves `node_id` or `TOOL_SCHEMA_ACK=1` is set.
+      - **F2 is FIXED**: preamble renders at **1,110 tokens**, declarations present.
+      - `submit_patch_tool` / `edit_file_tool` in the undeclared list confirm the
+        harness wraps tools as `<name>_tool`, which Cell 0D exploits.
+- [ ] **RUN Cell 0D** to settle `node_id`. Blocking.
 - [ ] Record every mismatch found. If any parameter name differed, that is very likely the
       whole explanation for "6/14 submitted, score 0" — `edit_file` rejecting the call,
       then `submit_patch` on an unmodified tree.

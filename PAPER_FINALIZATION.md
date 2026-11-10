@@ -73,7 +73,11 @@ point at in a log or a table. The reframe's whole value is that it's checkable.
 ### 6. Write the taxonomy
 - [ ] **6.1** §F1 stop-token starvation — include the six-line masking loop verbatim; the
       bug is visible to any reader, which is what makes it convincing.
-- [ ] **6.2** §F2 preamble–budget — wording per 1.2.
+- [x] **6.2** §F2 preamble–budget — wording settled by Cell 0C (2026-11-10): preamble
+      measures **1,110 tokens**, median trajectory 831, so reading (a) holds — the
+      `tools=` render was failing silently. The earlier ~1,830 figure was a char/4
+      estimate and overshot by 65%; corrected in §5.2, §4.4, §7, STATUS_REVIEW and
+      REFRAME, with the correction stated in the text rather than quietly swapped.
 - [ ] **6.3** §F3 inter-stage format drift — include the markdown-fence regex verbatim.
 - [ ] **6.4** §F4 serialization fragmentation — the four-format table from `DIAGNOSIS.md` §C1.
 - [ ] **6.5** §F5 unfalsifiable metrics — the `or args == {}` line and the 85.7% → 0.0% gap.

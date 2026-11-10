@@ -30,13 +30,14 @@ My original §1 claimed `MAX_LEN=2560` + drop-don't-truncate had emptied the tra
 
 Two things remain true and are now the live questions:
 
-**(a) 299 fitting under 2560 is hard to reconcile with a ~1,830-token preamble.**
-Measured: `COMPETITION_TOOLS` ~1,473 tokens + `DEFAULT_SYSTEM_PROMPT` ~357. That would
-leave ~730 tokens for a full SWE-bench problem statement + subgraph JSON + numbered file
-span + `edit_file` + `submit_patch`. Since `render()` swallows a failing `tools=` render
-(`except Exception: pass`), the likeliest explanation is that **tool schemas were never
-in the training text** — i.e. C2 was only half-applied. See §2; settle it with the
-three-line check in `PAPER_FINALIZATION.md` 1.2.
+**(a) 299 fitting under 2560 is hard to reconcile with the preamble being present.**
+**RESOLVED 2026-11-10 by Cell 0C.** The preamble measures **1,110 tokens** against the
+real tokenizer. (My earlier figure here, ~1,830, was a char/4 *estimate* mislabelled as
+"measured" — it overshot by 65%. Corrected throughout.) The median trajectory was 831
+tokens, so at least half the training set was shorter than the preamble alone: it was
+not present. `render()` had been swallowing the failing `tools=` render via
+`except Exception: pass`, so C2 was only half-applied. The same cell confirms F2 is now
+**fixed**: declarations render and are present in the text.
 
 **(b) 299 = 115 grounded + ~184 synthetic screenplays.** `sft_combined.jsonl` merges
 `sft_real_train.jsonl` with `sft_scaled.jsonl`, so **~62% of the training data is still
@@ -191,7 +192,7 @@ You have five, all real and all reproducible:
 | # | Failure | Mechanism | Observable |
 |---|---|---|---|
 | F1 | **End-of-turn masking** | The `<turn\|>` stop token receives `-100`, so the policy is never trained to terminate | Responses run to `max_output_tokens`; tool calls emitted as prose |
-| F2 | **Preamble-budget collapse** | Eval-matched system prompt + tool schemas cost ~1,830 tok; with drop-don't-truncate at 2,560 the dataset silently empties | `len(kept)` collapses; no error raised |
+| F2 | **Preamble-budget collapse** | Eval-matched system prompt + tool schemas cost 1,110 tok (measured); with drop-don't-truncate at 2,560 the dataset silently empties | `len(kept)` collapses; no error raised |
 | F3 | **Inter-stage format drift** | RFT accepted markdown ` ```diff ` fences, erasing the tool-calling SFT taught | Submission rate falls between stages |
 | F4 | **Serialization fragmentation** | Four incompatible tool-call formats across one pipeline | Trained format ≠ parsed format |
 | F5 | **Unfalsifiable metrics** | Audit counted `args == {}` as submission; never measured tests-pass | 71.4%/85.7% reported vs 0.0% real |

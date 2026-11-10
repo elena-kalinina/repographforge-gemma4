@@ -215,7 +215,8 @@ CHAT_FORMAT_VERSION = "2026-11-10.stage1b"
 
 # --- F2 (silent preamble fallback) guards -------------------------------------------
 # Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
-# system-prompt preamble of ~1,830 tokens. A median below the preamble is arithmetically
+# system-prompt preamble of 1,110 tokens (measured, Phase 0.2). A median below the
+# preamble is arithmetically
 # impossible if the preamble is present, which proved the tool declarations were being
 # dropped by a `try/except Exception: pass` on every single training example.
 #
