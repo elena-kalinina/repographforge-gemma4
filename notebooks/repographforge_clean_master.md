@@ -868,52 +868,182 @@ print(f"  masking paths    : {chat_format.MASK_PATH_COUNTS}")
 
 #### Cell 0C: `[Phase 0.2]` Diff Real ADK Tool Schemas Against `COMPETITION_TOOLS`
 
-> **Placement note:** this is a Phase 0 diagnostic but it runs HERE, not in Part 0,
-> because it needs three things defined by earlier cells: the ADK installed (Cell 1),
-> Ryan's Section 3 tool definitions (Cell 3), and `/kaggle/working/chat_format.py`
-> (Cell 4). Running it before those is what left it unexecuted.
+> **Why this cell exists.** `src/chat_format.py:COMPETITION_TOOLS` is a hand-written
+> transcription of the competition's 9 tools. Nothing has ever checked it against the
+> real harness. If one parameter name differs, training teaches the policy to emit calls
+> the sandbox rejects — which is exactly the signature of a run that submits patches and
+> scores zero.
 
-> **Run this AFTER Ryan's Section 3 (which defines the tools) and BEFORE any training.**
-> `src/chat_format.py:COMPETITION_TOOLS` is a hand-written transcription. Nothing has ever
-> checked it against the real definitions. If a single parameter name differs, training
-> teaches the policy to emit calls the sandbox rejects — which produces exactly the
-> observed signature of a run that submits patches and scores zero.
+> **Prerequisites:** Cell 1 (installs `swegemma` / `adk_eval_core` / `adk_submission`),
+> Cell 3, Cell 4, Cell 4B. Running it before those is why it sat unexecuted.
+
+> **v1 post-mortem (2026-11-10).** The first version guessed six global names
+> (`TOOLS`, `tools`, `TOOL_SCHEMAS`, …), found none, and reported
+> *"Could not locate the tool definitions automatically."* That was a bad assumption:
+> the harness tools are not notebook globals — they live inside the installed ADK
+> packages. Worse, the F2 render probe was nested inside the `else`, so a discovery
+> miss silently skipped the one check that needed no discovery at all. v2 searches
+> globals **structurally** (any list whose head looks like a tool), walks the ADK
+> packages, falls back to grepping the harness **source on disk** for our 9 tool names,
+> and always runs the F2 probe.
 
 ```python
-import json, inspect, sys
+# =============================================================================
+# Phase 0.2 — Tool schema reconciliation.  Version 2 (discovery hardened).
+#
+# v1 probed six guessed global names, found none, and then skipped the F2 render
+# probe because it was nested inside the `else`. Both are fixed: discovery now
+# searches globals structurally AND introspects the installed harness packages,
+# and the F2 probe ALWAYS runs regardless of whether discovery succeeds.
+# =============================================================================
+import json, inspect, sys, importlib, pkgutil, re
+from pathlib import Path
 sys.path.insert(0, "/kaggle/working")
 from chat_format import COMPETITION_TOOLS
 
-# 1. Locate whatever Section 3 defined. Probe the usual names.
-real_tools = None
-for name in ("TOOLS", "tools", "TOOL_SCHEMAS", "AGENT_TOOLS", "FUNCTIONS", "tool_defs"):
-    obj = globals().get(name)
-    if isinstance(obj, (list, tuple)) and obj:
-        real_tools = list(obj)
-        print(f"✓ Found tool definitions in global `{name}` ({len(real_tools)} tools)")
+OUR_NAMES = []
+for _t in COMPETITION_TOOLS:
+    _f = _t.get("function", _t) if isinstance(_t, dict) else {}
+    if _f.get("name"):
+        OUR_NAMES.append(_f["name"])
+print(f"We declare {len(OUR_NAMES)} tools: {OUR_NAMES}\n")
+
+# ---------------------------------------------------------------- A. globals
+def _looks_like_tool_list(obj):
+    if not isinstance(obj, (list, tuple)) or not obj:
+        return False
+    head = obj[0]
+    if isinstance(head, dict) and ("name" in head or "function" in head):
+        return True
+    if callable(head) and getattr(head, "__name__", "").islower():
+        return True
+    return any(hasattr(head, a) for a in ("declaration", "_declaration", "name", "func"))
+
+real_tools, found_via = None, None
+for _k, _v in list(globals().items()):
+    if _k.startswith("_") or _k == "COMPETITION_TOOLS":
+        continue
+    if _looks_like_tool_list(_v):
+        real_tools, found_via = list(_v), f"global `{_k}`"
         break
 
+# ------------------------------------------------- B. installed ADK packages
+PKGS = ("swegemma", "adk_eval_core", "adk_submission", "adk")
+pkg_paths = {}
+for _p in PKGS:
+    try:
+        _m = importlib.import_module(_p)
+        pkg_paths[_p] = Path(getattr(_m, "__file__", "") or "").parent
+    except Exception as _e:
+        pkg_paths[_p] = None
+
 if real_tools is None:
-    print("⚠️  Could not locate the tool definitions automatically.")
-    print("    Candidate globals containing 'tool':")
-    for k, v in sorted(globals().items()):
-        if "tool" in k.lower() and not k.startswith("_"):
-            print(f"      {k}: {type(v).__name__}")
-    print("    Set `real_tools = <that object>` and re-run this cell.")
+    for _p, _root in pkg_paths.items():
+        if _root is None:
+            continue
+        try:
+            _mod = importlib.import_module(_p)
+        except Exception:
+            continue
+        _subs = [_mod]
+        try:
+            for _mi in pkgutil.walk_packages([str(_root)], prefix=_p + "."):
+                try:
+                    _subs.append(importlib.import_module(_mi.name))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        for _sm in _subs:
+            for _k, _v in vars(_sm).items():
+                if _k.startswith("_"):
+                    continue
+                if _looks_like_tool_list(_v):
+                    real_tools, found_via = list(_v), f"{_sm.__name__}.{_k}"
+                    break
+                if isinstance(_v, dict) and _v and all(callable(x) for x in _v.values()):
+                    if set(_v) & set(OUR_NAMES) or len(_v) >= 5:
+                        real_tools = list(_v.values())
+                        found_via = f"{_sm.__name__}.{_k} (name->callable registry)"
+                        break
+            if real_tools:
+                break
+        if real_tools:
+            break
+
+if real_tools is not None:
+    print(f"✓ Found tool definitions via {found_via} ({len(real_tools)} tools)\n")
+
+# ------------------------------------------- C. filesystem evidence (always)
+# Even without an importable registry, the harness SOURCE is on disk. If a tool
+# name we train on never appears anywhere in it, that name is wrong — which is
+# sufficient on its own to explain patches that submit and score zero.
+print("=" * 72)
+print("SOURCE-LEVEL EVIDENCE: do our tool names exist in the harness at all?")
+print("=" * 72)
+CRIT_PARAMS = ["old_string", "new_string", "filepath", "node_id", "patch", "command"]
+corpus, scanned = {}, 0
+for _p, _root in pkg_paths.items():
+    if _root is None or not _root.exists():
+        print(f"  (package {_p} not importable — skipped)")
+        continue
+    for _f in _root.rglob("*.py"):
+        try:
+            corpus[str(_f)] = _f.read_text(errors="ignore")
+            scanned += 1
+        except Exception:
+            pass
+print(f"  scanned {scanned} source files across {[k for k,v in pkg_paths.items() if v]}\n")
+
+def _hits(token):
+    pat = re.compile(r"\b" + re.escape(token) + r"\b")
+    return [f for f, src in corpus.items() if pat.search(src)]
+
+missing_names = []
+if corpus:
+    print("  TOOL NAMES")
+    for n in OUR_NAMES:
+        h = _hits(n)
+        if h:
+            print(f"    ✓ {n:<22} {len(h)} file(s), e.g. {Path(h[0]).name}")
+        else:
+            print(f"    ✗ {n:<22} NOT FOUND IN HARNESS SOURCE")
+            missing_names.append(n)
+    print("\n  CRITICAL PARAMETER NAMES")
+    for p in CRIT_PARAMS:
+        h = _hits(p)
+        print(f"    {'✓' if h else '✗'} {p:<22} {len(h)} file(s)")
+    # What tool-ish names DOES the harness use that we never declare?
+    cand = set()
+    for src in corpus.values():
+        cand |= set(re.findall(r'["\']name["\']\s*:\s*["\'](\w+)["\']', src))
+        cand |= set(re.findall(r"def\s+(\w*(?:file|patch|command|search|graph|status)\w*)\s*\(", src))
+    extra = sorted(c for c in cand if c not in OUR_NAMES and not c.startswith("_"))
+    if extra:
+        print(f"\n  Harness-side candidate tool identifiers we do NOT declare ({len(extra)}):")
+        for c in extra[:40]:
+            print(f"      {c}")
 else:
+    print("  No harness source readable — run Cell 1 first (installs the ADK).")
+
+# ---------------------------------------------------------------- D. the diff
+if real_tools is not None:
     def normalize(t):
-        """Reduce either a dict schema or a python callable to {name: set(param_names)}."""
         if isinstance(t, dict):
             fn = t.get("function", t)
             params = (fn.get("parameters") or {}).get("properties", {}) or {}
             return fn.get("name", "?"), set(params.keys())
         if callable(t):
-            return t.__name__, set(inspect.signature(t).parameters.keys())
+            try:
+                ps = set(inspect.signature(t).parameters.keys()) - {"self", "cls"}
+            except (TypeError, ValueError):
+                ps = set()
+            return getattr(t, "__name__", str(t)), ps
         decl = getattr(t, "declaration", None) or getattr(t, "_declaration", None)
         if decl is not None:
             params = getattr(decl, "parameters", None)
             props = getattr(params, "properties", {}) if params else {}
-            return getattr(decl, "name", "?"), set(props.keys())
+            return getattr(decl, "name", "?"), set(props or {})
         return str(t), set()
 
     real = dict(normalize(t) for t in real_tools)
@@ -922,7 +1052,6 @@ else:
     print("\n" + "=" * 72)
     print("PHASE 0.2: TOOL SCHEMA DIFF  (real ADK  vs  COMPETITION_TOOLS)")
     print("=" * 72)
-
     mismatches = []
     for name in sorted(set(real) | set(ours)):
         if name not in real:
@@ -937,37 +1066,53 @@ else:
                     f"ours-only={sorted(only_ours) or '-'}"
                 )
             else:
-                print(f"  ✓ {name}({', '.join(sorted(real[name])) or ''})")
-
+                print(f"  ✓ {name}({', '.join(sorted(real[name]))})")
     if mismatches:
         print("\n  ✗ MISMATCHES FOUND:")
         for m in mismatches:
             print(f"      {m}")
-        print("\n  >>> Do NOT train until these are reconciled. Prefer importing the real")
-        print("      schemas over editing the copy — a copy drifts, an import cannot:")
+        print("\n  >>> Do NOT train until reconciled. Prefer importing the real schemas")
+        print("      over editing the copy — a copy drifts, an import cannot:")
         print("          import chat_format; chat_format.COMPETITION_TOOLS = real_tools")
     else:
-        print("\n  ✓ All tool names and parameter names match. Schemas are safe to train on.")
+        print("\n  ✓ All tool and parameter names match. Safe to train on.")
     print("=" * 72)
+else:
+    print("\n  (No importable tool registry found — rely on the source evidence above.)")
+    print("  Candidate list/dict globals, for manual inspection:")
+    for _k, _v in sorted(globals().items()):
+        if _k.startswith("_") or _k in ("COMPETITION_TOOLS", "corpus", "pkg_paths"):
+            continue
+        if isinstance(_v, (list, tuple, dict)) and 3 <= len(_v) <= 40:
+            print(f"      {_k}: {type(_v).__name__}[{len(_v)}]")
+    print("  If one of those is the tool list: set `real_tools = <it>` and re-run.")
 
-    # 2. Confirm the declarations actually survive into rendered training text (failure F2).
-    from pathlib import Path
-    from transformers import AutoTokenizer
-    from chat_format import render
-    # Self-sufficient: do not depend on Cell 0A having run in this session.
-    _MP = globals().get("MODEL_PATH") or Path(
-        "/kaggle/input/models/google/gemma-4/transformers/gemma-4-31b-it-qat-q4_0-unquantized/2"
-    )
-    _tok = AutoTokenizer.from_pretrained(str(_MP), local_files_only=True)
-    try:
-        _probe = render([{"role": "user", "content": "probe"}], _tok, tools=COMPETITION_TOOLS)
-    except RuntimeError as e:
-        print(f"\n>>> F2 IS LIVE: {e}")
-        raise SystemExit(0)
+# ------------------------------------------ E. F2 probe — ALWAYS runs (v1 bug)
+print("\n" + "=" * 72)
+print("F2 PROBE: do the declarations survive into rendered training text?")
+print("=" * 72)
+from transformers import AutoTokenizer
+from chat_format import render, CHAT_FORMAT_VERSION
+print(f"chat_format version: {CHAT_FORMAT_VERSION}")
+_MP = globals().get("MODEL_PATH") or Path(
+    "/kaggle/input/models/google/gemma-4/transformers/gemma-4-31b-it-qat-q4_0-unquantized/2"
+)
+_tok = AutoTokenizer.from_pretrained(str(_MP), local_files_only=True)
+try:
+    _probe = render([{"role": "user", "content": "probe"}], _tok, tools=COMPETITION_TOOLS)
+except RuntimeError as e:
+    print(f"\n>>> F2 IS LIVE: {e}")
+    print(">>> The template drops `tools=`. Training text contains no declarations.")
+else:
     _n = len(_tok(_probe, add_special_tokens=False)["input_ids"])
-    print(f"\nRendered preamble with tools: {_n} tokens")
-    print(f"Declarations present in text: {all(p in _probe for p in ('old_string','node_id','submit_patch'))}")
-    print("If that is False, the template is ignoring `tools=` and failure F2 is live.")
+    _ok = all(p in _probe for p in ("old_string", "node_id", "submit_patch"))
+    print(f"Rendered preamble with tools: {_n} tokens")
+    print(f"Declarations present in text: {_ok}")
+    if _ok:
+        print(">>> F2 is FIXED. Record this token count — it is manuscript §5.2 evidence.")
+    else:
+        print(">>> F2 IS LIVE: template ignored `tools=` without raising.")
+print("=" * 72)
 ```
 
 ---
