@@ -9,11 +9,11 @@
 
 ## Abstract
 
-Supervised fine-tuning of tool-using agents is usually monitored with a scalar training loss. We report a post-training campaign on Gemma 4 31B for repository-level bug fixing in which the loss converged cleanly in every run — in one case from 2.046 to 0.3935 — while end-task resolution remained at approximately zero throughout. We trace this gap to five distinct defects, each of which is structurally invisible to a loss curve.
+Supervised fine-tuning of tool-using agents is usually monitored with a scalar training loss. We report a post-training campaign on Gemma 4 31B for repository-level bug fixing in which the loss converged cleanly in every run — in one case from 2.046 to 0.3935 — while end-task resolution remained at approximately zero throughout. We trace this gap to six distinct defects, each of which is structurally invisible to a loss curve.
 
-These are: **(F1) stop-token starvation**, in which the end-of-turn token receives no gradient because a masking loop clears its label, producing a policy that cannot terminate a turn and emits tool calls as conversational prose; **(F2) silent preamble fallback**, in which the code path that aligns training context with evaluation context fails open, so tool declarations are absent from every training sequence while the pipeline reports success; **(F3) inter-stage format drift**, in which a rejection-sampling stage accepted only markdown-fenced patches, contained zero tool calls, and — running last — erased the tool-calling behaviour the preceding stage had taught; **(F4) serialization fragmentation**, in which four mutually incompatible tool-call encodings coexisted in one pipeline, none of which matched the serving template; and **(F5) unfalsifiable metrics**, in which the audit counted submission attempts rather than resolved tasks, reporting 85.7% where the true resolution rate was 0.0%.
+These are: **(F1) stop-token starvation**, in which the end-of-turn token receives no gradient because a masking loop clears its label, producing a policy that cannot terminate a turn and emits tool calls as conversational prose; **(F2) silent preamble fallback**, in which the code path that aligns training context with evaluation context fails open, so tool declarations are absent from every training sequence while the pipeline reports success; **(F3) inter-stage format drift**, in which a rejection-sampling stage accepted only markdown-fenced patches, contained zero tool calls, and — running last — erased the tool-calling behaviour the preceding stage had taught; **(F4) serialization fragmentation**, in which four mutually incompatible tool-call encodings coexisted in one pipeline, none of which matched the serving template; **(F5) unfalsifiable metrics**, in which the audit counted submission attempts rather than resolved tasks, reporting 85.7% where the true resolution rate was 0.0%; and **(F6) interface transcription drift**, in which the tool declarations shown to the model were a hand-written copy of the harness's interface that had diverged from it, so the policy learned to emit well-formed calls the sandbox rejects. F6 was masked by F2 and became observable only once F2 was repaired — silent failures queue, and each repair exposes the next.
 
-For each failure we give the mechanism, the code that produces it, its observable signature, and a corrective assertion. We additionally report a controlled verifier study over candidate patches indicating that anchoring an LLM judge to structural code-graph contracts improves agreement with deterministic test execution relative to an unanchored judge. We make no claim that code-graph anchoring improves end-task agent performance; our resolution rates are too close to zero to support one. Our contribution is diagnostic: agentic post-training pipelines require **structural gates** — on label coverage, stop-token supervision, dataset survival, and inter-stage format identity — because scalar loss cannot observe any of them. We release the diagnostic harness.
+For each failure we give the mechanism, the code that produces it, its observable signature, and a corrective assertion. We additionally report a controlled verifier study over candidate patches indicating that anchoring an LLM judge to structural code-graph contracts improves agreement with deterministic test execution relative to an unanchored judge. We make no claim that code-graph anchoring improves end-task agent performance; our resolution rates are too close to zero to support one. Our contribution is diagnostic: agentic post-training pipelines require **structural gates** — on label coverage, stop-token supervision, dataset survival, and inter-stage format identity — because scalar loss cannot observe any of them — and, for F6, because the relevant ground truth lies outside the training pipeline entirely. We release the diagnostic harness.
 
 ---
 
@@ -23,21 +23,21 @@ Open-weights models such as Google's Gemma 4 family make locally hosted, privacy
 
 We undertook exactly this. Over five post-training runs on Gemma 4 31B — supervised fine-tuning on code-graph-anchored trajectories, followed by best-of-$N$ rejection fine-tuning filtered by structural rubrics — every run produced a smooth, converging loss curve. Every run also produced an agent that resolved approximately zero held-out tasks. The leaderboard scores across the campaign were 0.00, 0.00, 0.00, 0.03, 0.01, and 0.00.
 
-The central observation of this paper is that **the loss curve was never going to reveal why.** A cross-entropy loss over a token sequence is a scalar summary. It cannot report which tokens carried gradient, what fraction of the sequence was supervised, whether the token that terminates a turn appeared in the labels at all, whether the tool declarations the evaluation harness sends were present during training, or how many training examples survived preprocessing. Each of those was wrong at some point in our campaign, and each was wrong *silently*: the pipeline logged success, the loss fell, and the agent did not work.
+The central observation of this paper is that **the loss curve was never going to reveal why.** A cross-entropy loss over a token sequence is a scalar summary. It cannot report which tokens carried gradient, what fraction of the sequence was supervised, whether the token that terminates a turn appeared in the labels at all, whether the tool declarations the evaluation harness sends were present during training, whether those declarations matched the interface the harness actually exposes, or how many training examples survived preprocessing. Each of those was wrong at some point in our campaign, and each was wrong *silently*: the pipeline logged success, the loss fell, and the agent did not work.
 
-This paper is the post-mortem. We present five failures as a taxonomy (§5), each with mechanism, signature, fix, and a runnable assertion that would have caught it. We report the one experiment that survives the campaign as a positive result — a verifier-alignment study (§6) that is methodologically independent of the agent failures because it evaluates static patches rather than agent rollouts. We then generalise the taxonomy into a set of structural gates for agentic post-training (§8), which we regard as the paper's practical contribution.
+This paper is the post-mortem. We present six failures as a taxonomy (§5), each with mechanism, signature, fix, and a runnable assertion that would have caught it. We report the one experiment that survives the campaign as a positive result — a verifier-alignment study (§6) that is methodologically independent of the agent failures because it evaluates static patches rather than agent rollouts. We then generalise the taxonomy into a set of structural gates for agentic post-training (§8), which we regard as the paper's practical contribution.
 
 ### 1.1 What this paper does and does not claim
 
 We are explicit about the boundary, because the original framing of this work claimed more.
 
-**We claim:** that these five defects occurred, that we have identified their mechanisms, that each is invisible to the training loss, and that each admits a cheap structural assertion. We claim the verifier-alignment result of §6 within its stated limitations.
+**We claim:** that these six defects occurred, that we have identified their mechanisms, that each is invisible to the training loss, and that each admits a cheap structural assertion. We claim the verifier-alignment result of §6 within its stated limitations.
 
 **We do not claim:** that code-graph anchoring improves end-task agent performance. Our resolution rate never exceeded 1 of 14 held-out tasks. Any such claim would require a working agent as a baseline, which we do not have. The system described in §3 should be read as the setting in which the failures occurred, not as a validated method.
 
 ### 1.2 Contributions
 
-1. **A taxonomy of five silent failures in agentic post-training** (§5), each with mechanism, observable signature, corrective fix, and a runnable assertion.
+1. **A taxonomy of six silent failures in agentic post-training** (§5), each with mechanism, observable signature, corrective fix, and a runnable assertion.
 2. **An environment-grounded account of tool-call serialization drift** (§5.4, Appendix A), including a dump of the real Gemma 4 chat template that contradicts the format our own earlier methodology section documented.
 3. **A verifier-alignment study** (§6) comparing unanchored and rubric-anchored LLM judges against deterministic test execution, reported with its contamination caveats stated.
 4. **A set of structural gates for agentic post-training pipelines** (§8), stated as assertions a practitioner can paste into their own trainer.
@@ -78,7 +78,7 @@ Two task sources were used, and the distinction matters for interpreting every r
 
 **Synthetic tasks (reverse fault injection).** A teacher model is shown a subgraph and asked to introduce a cross-node contract violation, producing a bug patch $\Delta_{\text{bug}}$, a reproduction test, and an evidence rubric. The intended ground-truth fix is the inversion $\Delta_{\text{gold}} = -\Delta_{\text{bug}}$.
 
-*Verification status: none.* The generated patches were never applied to a repository, the reproduction tests were never executed, and the trajectory admission filter was a length check (`len(messages) >= 4`). The synthesiser was additionally prompted with node *names* only, never source text, so generated diffs reference invented context lines. An early version of the pipeline also passed $\Delta_{\text{bug}}$ to the trajectory teacher under the label "Reference Fix Patch", inverting the training target (§5.6).
+*Verification status: none.* The generated patches were never applied to a repository, the reproduction tests were never executed, and the trajectory admission filter was a length check (`len(messages) >= 4`). The synthesiser was additionally prompted with node *names* only, never source text, so generated diffs reference invented context lines. An early version of the pipeline also passed $\Delta_{\text{bug}}$ to the trajectory teacher under the label "Reference Fix Patch", inverting the training target (§5.7).
 
 **Grounded tasks.** `src/build_real_sft.py` constructs trajectories from the 115 real training tasks, whose `patch` field is the maintainer's actual fix. Real graph nodes populate the subgraph turn; exact pre-fix and post-fix hunk text populate the `read_file` and `edit_file` turns.
 
@@ -134,7 +134,7 @@ Several conclusions depend on properties of the serving stack rather than our co
 - **Tool responses are folded inside the preceding model turn rather than emitted as their own turn.** This is central to §5.1.
 - Trajectory token lengths: median 831, p90 1475, p95 1709, p99 2729, maximum 4367.
 - The eval-matched preamble — the 9 tool declarations plus the system prompt, rendered through `apply_chat_template(tools=...)` — measures **1,110 tokens**. This is the figure §5.2 turns on, and it is measured, not estimated from character counts.
-- All 9 tool *names* we declare appear in the harness source. The parameter `node_id`, required by both graph tools, appears in none of its 98 Python files; §5.2 and §9 treat this as unresolved rather than concluded.
+- All 9 tool *names* we declare appear in the harness source, but the parameter `node_id` — required by both graph tools in our declarations — appears in none of its 98 Python files. The harness names it `node` and documents it as a dotted symbol name. This is F6 (§5.6); §9.9 states what remains unverified.
 
 ---
 
@@ -147,8 +147,9 @@ Several conclusions depend on properties of the serving stack rather than our co
 | **F3** | Inter-stage format drift | RFT filter accepts markdown fences, selecting against tool calls | Submission rate falls *between* stages |
 | **F4** | Serialization fragmentation | Four incompatible tool-call encodings in one pipeline | Well-formed calls that nothing parses |
 | **F5** | Unfalsifiable metrics | Audit counts attempts, not resolutions | 85.7% reported where truth is 0.0% |
+| **F6** | Interface transcription drift | Hand-copied tool declarations diverge from the harness's real parameters | Well-formed calls the sandbox rejects; patches submitted, none resolved |
 
-A sixth defect, label-direction inversion, is reported in §5.6; it is a data-pipeline error rather than a silent-failure mode, since it is detectable by applying the label.
+A seventh defect, label-direction inversion, is reported in §5.7; it is a data-pipeline error rather than a silent-failure mode, since it is detectable by applying the label.
 
 ### 5.1 F1 — Stop-token starvation
 
@@ -287,7 +288,48 @@ More fundamentally, *submission is not resolution*. The audit never applied the 
 assert "resolved" in audit_columns, "eval does not measure task resolution"
 ```
 
-### 5.6 A sixth defect: label-direction inversion
+### 5.6 F6 — Interface transcription drift
+
+**Mechanism.** The tool declarations shown to the model during training are a *hand-written transcription* of the interface the evaluation harness actually exposes. Ours diverged from it. The divergence is undetectable from inside the training pipeline, because the transcription is internally consistent: it is valid JSON schema, it renders into the prompt, the model learns it faithfully, and the loss falls. Detection requires comparing the declarations against the harness, which is not part of the training pipeline at all.
+
+**Evidence.** The harness documents its graph tool as follows (`swegemma/tools/graph.py`, verbatim):
+
+```
+get_code_neighbors(ctx, node, edge_type=None, ...)
+    node: Dotted symbol name or suffix of the function, method, or class node
+          (e.g. 'pkg.module.Class.method', 'Class.method', or 'parse_request').
+    edge_type: Optional edge relation filter (e.g. 'calls'; case-insensitive,
+               default None for all edges).
+```
+
+Our declaration named the first parameter `node_id` and the second `direction`, typed as an enumeration over `in`, `out`, `both` — a parameter the harness does not define and a vocabulary it does not use. All nine tool *names* match; it is the parameters that drift, which is why a name-level check would have passed.
+
+**The defect is also in the training data.** Both trajectory generators write the argument name directly into the supervised text:
+
+```python
+# src/build_real_sft.py:219 and src/teacher_rollouts.py:271
+"function": {"name": "get_code_subgraph", "arguments": {"node_id": anchor_id}}
+```
+
+Every grounded and every synthetic trajectory therefore *demonstrates* the rejected call. Correcting the declarations alone would leave a dataset that teaches the model to ignore them.
+
+**Signature.** Syntactically well-formed tool calls that the sandbox rejects at evaluation time. Downstream, this is indistinguishable from a model that cannot use tools — the rollout shows a call, an error, a retry, and a budget that drains. It accounts for the campaign's characteristic result: patches submitted, nothing resolved.
+
+**Why it surfaced last.** F6 was *masked* by F2. While the tool declarations were absent from training altogether, their content could not matter. Repairing F2 put declarations into the prompt for the first time and thereby made their correctness reachable as a question. We draw a general point from this: silent failures queue. A pipeline with several of them reveals them in dependency order, and each repair should be expected to expose the next rather than to produce a working system.
+
+**Scope of this claim.** We state what is established and what is not. Established: all nine tool names resolve in the harness source; the parameter `node_id` appears in none of its 98 Python files; and the quoted divergence for `get_code_neighbors` is read verbatim from that source. Not established: the full parameter-level enumeration for the remaining eight tools, which we derive mechanically rather than by hand (below), and — importantly — we have **not** re-run the campaign with corrected declarations. We therefore claim F6 as a defect with an identified mechanism that accounts for the observed signature, not as a repair we have validated.
+
+**Fix.** Do not re-transcribe. The harness re-exports its tools as callables, so the declarations can be *derived* from them:
+
+```python
+import swegemma.tools as T
+schema = {name: set(inspect.signature(getattr(T, name)).parameters) - INJECTED
+          for name in declared_names}
+```
+
+A copy drifts; a derivation cannot. The corrective assertion is Gate 8 (§8).
+
+### 5.7 A seventh defect: label-direction inversion
 
 The synthetic task record defines `bug_patch` as *"a unified git diff that introduces the bug into the working code."* The trajectory generator read that field and presented it to the teacher as the answer:
 
@@ -297,7 +339,7 @@ patch = task.get("bug_patch", "")[:2000]
 f"### Reference Fix Patch:\n{patch}\n\n"
 ```
 
-Every synthetic trajectory therefore demonstrated applying the defect. We separate this from F1–F5 because it is **not** a silent failure: applying the label and running the test detects it immediately. It went undetected only because nothing in the pipeline executed anything (§3.2) — which makes it a consequence of F5 rather than an independent failure mode.
+Every synthetic trajectory therefore demonstrated applying the defect. We separate this from F1–F6 because it is **not** a silent failure: applying the label and running the test detects it immediately. It went undetected only because nothing in the pipeline executed anything (§3.2) — which makes it a consequence of F5 rather than an independent failure mode.
 
 The fix was to build trajectories from the 115 real maintainer fixes, and to rename the field so the inversion cannot recur:
 
@@ -309,7 +351,7 @@ assert "fix" in field_name, "patch field must be the fix direction"
 
 ## 6. Verifier Alignment Study
 
-This is the one experiment in the campaign that is methodologically independent of the agent failures: it evaluates **static candidate patches**, not agent rollouts, so none of F1–F5 can affect it.
+This is the one experiment in the campaign that is methodologically independent of the agent failures: it evaluates **static candidate patches**, not agent rollouts, so none of F1–F6 can affect it.
 
 **Setup.** A balanced benchmark of candidate patches across the 129 competition tasks: gold maintainer fixes ($y^+$), truncated contract-omission patches ($y^-$), and sycophantic-drift patches ($y^-$). Each is scored by $V_{\text{free}}$ and $V_{\text{graph}}$ and compared against $V_{\text{exec}}$.
 
@@ -369,7 +411,7 @@ These are **single observations**, reported as existence proofs that the underly
 
 **`requests_7502`.** Symptom in `models.py`, implementation in `utils.py`. The agent exhausted its budget paging the caller file. This is the cross-file indirection case that motivated 2-hop semantic expansion; we record it as a qualitative observation only, since with resolution near zero we cannot show that the expansion helps.
 
-That `requests_7505` and `requests_6644` happened at all establishes that capability was induced. That they did not generalise is what F1–F5 explain.
+That `requests_7505` and `requests_6644` happened at all establishes that capability was induced. That they did not generalise is what F1–F6 explain.
 
 ---
 
@@ -405,7 +447,16 @@ for marker in ("File: ", '"status": "ok"', "<|tool_response>"):
 
 **Gate 7 — Falsifiable evaluation.** Report applies-cleanly and tests-pass. Never report attempt counts as performance. Without this gate, none of the others can be prioritised, because no measurement distinguishes a fix from a regression.
 
-We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4 and 6 of *format identity across boundaries*, and Gates 5 and 7 of *measurement*. None is expensive. All are absent from standard fine-tuning recipes.
+**Gate 8 — Interface identity against the harness.** Derive the tool declarations from the harness's own callables and refuse to train if the declared parameters differ from them:
+```python
+import swegemma.tools as T
+for name in declared:
+    real = set(inspect.signature(getattr(T, name)).parameters) - INJECTED
+    assert real == declared[name], f"{name}: harness={real} declared={declared[name]}"
+```
+This is the only gate whose ground truth lies *outside* the training pipeline, which is precisely why no amount of internal consistency checking can substitute for it. Our implementation records the comparison as a signed receipt — the chat-format version, a hash of the declared schemas, and the outcome — and the trainer refuses to start without a current, clean one. Making the verification a durable artefact rather than a console message is what prevents it from being skipped under deadline.
+
+We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4, 6 and 8 of *format identity across boundaries*, and Gates 5 and 7 of *measurement*. None is expensive. All are absent from standard fine-tuning recipes.
 
 ---
 
@@ -419,6 +470,7 @@ We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4 and 6 
 6. **Single model family, single task family.** One model, two training repositories, two holdout repositories. We expect the failure *modes* to generalise, since they concern pipeline structure rather than model specifics, but we have not shown this.
 7. **No hardware profiling.** An earlier draft reported a multi-scale VRAM and throughput table across Gemma 4 E2B, E4B, 12B, and 31B. Those measurements were never taken and the table has been removed.
 8. **Small holdout.** 14 tasks; leaderboard ~60 hidden tasks. Single-task differences move the reported rate by 7 percentage points.
+9. **F6 is diagnosed, not repaired.** We quote the divergence for one tool verbatim from the harness source and show that both trajectory generators write the rejected argument name into supervised text. We have **not** re-run the campaign with derived declarations and a rewritten dataset, so we cannot report what the resolution rate becomes once F6 is corrected. The parameter-level enumeration for the remaining eight tools is derived mechanically rather than audited by hand.
 
 ---
 
@@ -428,15 +480,17 @@ We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4 and 6 
 
 **Pipeline.** Collect execution-verified trajectories: run the agent against the live sandbox and retain a rollout only if `submit_patch` fired, the diff applied, and the reproduction test flipped red to green. This replaces the unverified synthetic majority of the training set and is the single highest-value remaining change.
 
-**Open question.** Whether code-graph anchoring improves end-task performance remains open. The present work establishes only that the question cannot be answered by a pipeline exhibiting F1–F5 — and that a converging loss curve is not evidence that it does not.
+**Open question.** Whether code-graph anchoring improves end-task performance remains open. The present work establishes only that the question cannot be answered by a pipeline exhibiting F1–F6 — and that a converging loss curve is not evidence that it does not.
 
 ---
 
 ## 11. Conclusion
 
-We set out to build a graph-anchored offline coding agent and did not. What we obtained instead is a detailed account of five ways an agentic post-training pipeline can fail while reporting success: a stop token that receives no gradient, a context-alignment path that fails open, a final stage that erases the first, four serialization formats where one was needed, and a metric that counts attempts rather than outcomes.
+We set out to build a graph-anchored offline coding agent and did not. What we obtained instead is a detailed account of six ways an agentic post-training pipeline can fail while reporting success: a stop token that receives no gradient, a context-alignment path that fails open, a final stage that erases the first, four serialization formats where one was needed, a metric that counts attempts rather than outcomes, and a tool interface hand-copied from the harness that had quietly drifted from it.
 
-The through-line is that none of these is visible in the training loss. A cross-entropy scalar cannot report which tokens were supervised, whether the policy was taught to stop, what the preprocessing kept, or whether the number being optimised means anything. The remedy is not a better loss but **structural assertions** — on label coverage, stop-token supervision, train/eval format identity, dataset survival, and falsifiable evaluation — run before every training job.
+The through-line is that none of these is visible in the training loss. A cross-entropy scalar cannot report which tokens were supervised, whether the policy was taught to stop, what the preprocessing kept, or whether the number being optimised means anything. The remedy is not a better loss but **structural assertions** — on label coverage, stop-token supervision, train/eval format identity, dataset survival, falsifiable evaluation, and interface identity against the harness — run before every training job.
+
+One further lesson is methodological. The defects did not present themselves at once; they queued. F6 was invisible while F2 was live, because declarations cannot be wrong while they are absent. We would therefore caution against reading any single repair as a fix: in a pipeline with several silent failures, the expected outcome of correcting one is that the next becomes observable.
 
 We report a negative result with identified mechanisms in preference to a positive result we cannot support. The verifier-alignment study in §6 stands within its caveats. The agent does not work, and we say so.
 

@@ -121,3 +121,25 @@ Do **not** attempt before Nov 12: a working agent, a leaderboard-worthy checkpoi
 3, or Phase 5/6 grounded rollouts. Those are the Dec 2 plan. The deadline on Thursday is a
 *writing* deadline, and the single biggest risk to it is spending Wednesday on a GPU run
 instead of on §6 and §8.
+
+
+---
+
+## Added 2026-11-10 — failure mode F6
+
+- [x] **F6 written into the manuscript.** Interface transcription drift: the declared tool
+      parameters are a hand-written copy of the harness interface and diverged from it.
+      Evidence quoted verbatim from `swegemma/tools/graph.py`
+      (`node` / `edge_type`, against our `node_id` / `direction`).
+      - [x] §5.6 new section; label-direction inversion renumbered to §5.7
+      - [x] §5 taxonomy table row
+      - [x] Abstract, §1, §1.1, §1.2 updated from five defects to six
+      - [x] §8 Gate 8 — interface identity against the harness, with the receipt design
+      - [x] §9.9 — F6 is diagnosed, not repaired; no re-run has been done
+      - [x] §11 conclusion, including the "silent failures queue" lesson
+- [ ] **Run Cell 0F and fold the full nine-tool enumeration into §5.6.** Currently one
+      tool is quoted verbatim and the rest are described as mechanically derived.
+- [ ] Decide whether §7 should state that F6 accounts for the score-0 submission
+      pattern. Holding until the enumeration is complete.
+- [ ] **Inconsistency noticed, not yet resolved:** §1 says "five post-training runs" but
+      lists six leaderboard scores (0.00, 0.00, 0.00, 0.03, 0.01, 0.00). Reconcile.
