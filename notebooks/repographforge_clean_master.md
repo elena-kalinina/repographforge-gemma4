@@ -230,7 +230,7 @@ logger = logging.getLogger("chat_format")
 # Bump on every change. The Kaggle notebook carries its own `%%writefile` copy of this
 # file, so the two can drift; Cell 4B compares this string and refuses to proceed on a
 # mismatch. A stale copy silently reinstates F1 and F2, which is how four runs were lost.
-CHAT_FORMAT_VERSION = "2026-11-10.stage1d"
+CHAT_FORMAT_VERSION = "2026-11-10.stage1e"
 
 # --- F2 (silent preamble fallback) guards -------------------------------------------
 # Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
@@ -442,6 +442,66 @@ def assert_tool_schema_verified(
             "Record this in the run log — it is a limitation of the resulting model."
         )
     return receipt
+
+
+def assert_trajectories_conform(records: List[Dict[str, Any]], *, sample: Optional[int] = None) -> None:
+    """Gate 9: the DEMONSTRATIONS must use the same interface as the DECLARATIONS.
+
+    `assert_tool_schema_verified` proves the declared schemas match the harness. It says
+    nothing about the trajectories, and the two drifted independently: five of nine tools
+    were mis-declared (F6) AND every trajectory supplied `submit_patch(description=...)`,
+    an argument the harness does not define. Correcting one without the other leaves a
+    model taught to ignore its own tool declarations.
+
+    Cheap enough to run on every example; call it after loading and before training.
+    """
+    declared: Dict[str, set] = {}
+    for t in COMPETITION_TOOLS:
+        fn = t.get("function", t)
+        declared[fn["name"]] = set((fn.get("parameters") or {}).get("properties", {}) or {})
+
+    bad: List[str] = []
+    seen = 0
+    for i, rec in enumerate(records):
+        if sample is not None and seen >= sample:
+            break
+        seen += 1
+        for msg in rec.get("messages", []):
+            for tc in (msg.get("tool_calls") or []):
+                fn = tc.get("function", tc)
+                name = fn.get("name")
+                args = fn.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args, strict=False) if args.strip() else {}
+                    except Exception:
+                        bad.append(f"record {i}: {name} arguments unparseable")
+                        continue
+                if not isinstance(args, dict):
+                    bad.append(f"record {i}: {name} arguments is {type(args).__name__}")
+                    continue
+                if name not in declared:
+                    bad.append(f"record {i}: calls undeclared tool {name!r}")
+                    continue
+                extra = sorted(set(args) - declared[name])
+                if extra:
+                    bad.append(f"record {i}: {name} sends undeclared {extra}")
+        if len(bad) >= 20:
+            break
+
+    if bad:
+        raise RuntimeError(
+            "\n" + "=" * 72
+            + "\nTRAJECTORY GATE: TRAINING REFUSED\n"
+            + "=" * 72
+            + f"\n  {len(bad)} trajectory tool call(s) do not match COMPETITION_TOOLS.\n"
+            + "".join(f"      {b}\n" for b in bad[:12])
+            + "\n  The declared schemas and the demonstrated calls disagree. Verifying the\n"
+              "  schemas (Cell 0C) does not check the data; run the Cell 8C rewrite pass in\n"
+              "  the data preparation notebook, then re-run this.\n"
+            + "=" * 72 + "\n"
+        )
+    logger.info("✓ Trajectory gate passed: %d record(s) use only declared parameters.", seen)
 
 
 # Phase 3.4 Budget-Based System Prompt (replaces the brittle 1-file/turn-3 prohibitions)
@@ -1085,12 +1145,13 @@ sys.path.insert(0, "/kaggle/working")
 import chat_format
 importlib.reload(chat_format)
 
-EXPECTED_VERSION = "2026-11-10.stage1d"
+EXPECTED_VERSION = "2026-11-10.stage1e"
 REQUIRED = ["CHAT_FORMAT_VERSION", "STRICT_TOOLS", "TOOL_RENDER_PROBES",
             "MASK_PATH_COUNTS", "assert_tool_rendering_clean",
             "build_example", "verify_and_print_samples",
             "write_tool_schema_receipt", "assert_tool_schema_verified",
-            "tool_schema_fingerprint", "TOOLS_SOURCE", "REAL_TOOLS_PATH"]
+            "tool_schema_fingerprint", "TOOLS_SOURCE", "REAL_TOOLS_PATH",
+            "assert_trajectories_conform"]
 
 missing = [n for n in REQUIRED if not hasattr(chat_format, n)]
 got = getattr(chat_format, "CHAT_FORMAT_VERSION", "<pre-versioning>")
@@ -1926,7 +1987,7 @@ from chat_format import build_example, verify_and_print_samples, COMPETITION_TOO
 # wrong tool schemas costs ~3 GPU hours and yields a run that converges, completes,
 # submits patches and scores zero — with no error at training time. This is the
 # last point at which that can be caught.
-from chat_format import assert_tool_schema_verified
+from chat_format import assert_tool_schema_verified, assert_trajectories_conform
 _receipt = assert_tool_schema_verified()
 logger.info(
     "Tool schemas verified: outcome=%s, preamble=%s tokens, discovery=%s",
@@ -1957,6 +2018,10 @@ with open(TRAJECTORIES_FILE, "r", encoding="utf-8") as f:
     for line in f:
         if line.strip():
             raw_records.append(json.loads(line))
+
+# Gate 9: the DEMONSTRATIONS must use the interface the DECLARATIONS promise. The schema
+# receipt above says nothing about the data, and the two drifted independently.
+assert_trajectories_conform(raw_records)
 
 kept = []
 dropped_overflow = 0

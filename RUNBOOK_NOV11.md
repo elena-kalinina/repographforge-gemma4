@@ -163,6 +163,41 @@ the boxes were never ticked. What genuinely remains:
 
 ---
 
+## Part D0 — resuming for training: what you must re-run
+
+`/kaggle/working` has survived your restarts, so the *artefacts* persist: `chat_format.py`,
+`real_tools.json`, the receipt, `train_sft.py`, and the corrected `.jsonl`. What does **not**
+persist is anything installed into the Python environment or defined in memory.
+
+| Cell | Re-run? | Why |
+| :--- | :--- | :--- |
+| Master 1, 2, 3 | **Always** | `pip install` and module globals die with the session |
+| Master 4 | **Yes** | `chat_format` is now `stage1e`; also re-establishes the module |
+| Master 4B | **Always** | It is the gate. Cheap, and it tells you if anything drifted |
+| Master 0C–0F | **No**, if 4B passes | The receipt persists and the gate validates it |
+| Data prep 8A–9 | **No** | The `.jsonl` persist and are already F6-corrected |
+| Master 5, 6, 7 | **Yes** | GPU flush, rewrite `train_sft.py`, train |
+
+**You do not have to remember this.** `train_sft.py` calls `assert_tool_schema_verified()`
+before the model loads. If the receipt is missing, stale, or written against different
+schemas, it refuses and names the remedy. The gate is the memory.
+
+One exception worth knowing: **`chat_format` is at `stage1e`**, which adds Gate 9 and
+invalidates your current receipt by version. So before the next training run you need
+Cell 4 → 4B → 0F → 0C → 6 once more. That is the version gate doing its job, not a
+setback — and it is the last schema change planned.
+
+### Why Gate 9 was added
+
+`assert_tool_schema_verified` proves the *declared* schemas match the harness. It says
+nothing about the *trajectories*, and those drifted independently: five of nine tools were
+mis-declared, and separately every trajectory supplied `submit_patch(description=...)`.
+Cell 0C going green told you the declarations were right while the data still taught the
+rejected call. `assert_trajectories_conform(raw_records)` now runs in Cell 6 and refuses
+if any demonstrated call sends a parameter the declarations do not contain.
+
+---
+
 ## Part D — after the paper (Dec 2 competition track)
 
 Not for Nov 11. See `TRAINING_FIX_PLAN_DEC2.md`.
