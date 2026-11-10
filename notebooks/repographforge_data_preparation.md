@@ -772,21 +772,39 @@ f_scaled = TRAJECTORIES_DIR / "sft_scaled.jsonl"
 f_combined = TRAJECTORIES_DIR / "sft_combined.jsonl"
 
 all_trajectories = {}
-# 1. Always include all 115 real ground-truth tasks first (Phase 2.1b)
-for src in [f_real, f_scaled]:
+provenance = {}
+
+# BUGFIX: this loop previously did `all_trajectories[syn_id] = item` unconditionally, so
+# sft_scaled OVERWROTE sft_real_train on any key collision — the exact opposite of the
+# "real tasks first" intent. Guard with `not in` so the grounded record always wins.
+for src, tag in [(f_real, "grounded"), (f_scaled, "synthetic")]:
     if src.exists():
         with open(src) as f:
             for line in f:
                 if line.strip():
                     item = json.loads(line)
                     syn_id = item.get("synthetic_id")
-                    if syn_id and item.get("messages"):
+                    if syn_id and item.get("messages") and syn_id not in all_trajectories:
                         all_trajectories[syn_id] = item
+                        provenance[syn_id] = tag
 
 with open(f_combined, "w", encoding="utf-8") as f:
     for item in all_trajectories.values():
         f.write(json.dumps(item) + "\n")
 
-print(f"🎉 Combined Dataset: {len(all_trajectories)} Total Grounded Trajectories -> {f_combined.name}")
-print("✓ Ready for Phase 0 & Phase 1 SFT training in the Master Training Notebook!")
+# Report composition explicitly. ~62% of the previous run's training signal was
+# unverified synthetic screenplays with hallucinated observations, which was not visible
+# anywhere in the pipeline. It must be visible now.
+n_grounded = sum(1 for v in provenance.values() if v == "grounded")
+n_synth = sum(1 for v in provenance.values() if v == "synthetic")
+total = max(1, len(all_trajectories))
+
+print(f"🎉 Combined Dataset: {len(all_trajectories)} trajectories -> {f_combined.name}")
+print(f"   Grounded (real maintainer fixes): {n_grounded} ({n_grounded/total*100:.1f}%)")
+print(f"   Synthetic (UNVERIFIED teacher):   {n_synth} ({n_synth/total*100:.1f}%)")
+if n_synth / total > 0.5:
+    print(f"   ⚠️  WARNING: {n_synth/total*100:.1f}% of training signal is unverified synthetic data")
+    print(f"       with hallucinated tool observations. Consider training grounded-only")
+    print(f"       (Stage 4 of TRAINING_FIX_PLAN_DEC2.md) and comparing.")
+print("✓ Ready for SFT training in the Master Training Notebook.")
 ```

@@ -133,6 +133,98 @@ else:
 
 ---
 
+#### Cell 0C: `[Phase 0.2]` Diff Real ADK Tool Schemas Against `COMPETITION_TOOLS`
+
+> **Run this AFTER Ryan's Section 3 (which defines the tools) and BEFORE any training.**
+> `src/chat_format.py:COMPETITION_TOOLS` is a hand-written transcription. Nothing has ever
+> checked it against the real definitions. If a single parameter name differs, training
+> teaches the policy to emit calls the sandbox rejects — which produces exactly the
+> observed signature of a run that submits patches and scores zero.
+
+```python
+import json, inspect, sys
+sys.path.insert(0, "/kaggle/working")
+from chat_format import COMPETITION_TOOLS
+
+# 1. Locate whatever Section 3 defined. Probe the usual names.
+real_tools = None
+for name in ("TOOLS", "tools", "TOOL_SCHEMAS", "AGENT_TOOLS", "FUNCTIONS", "tool_defs"):
+    obj = globals().get(name)
+    if isinstance(obj, (list, tuple)) and obj:
+        real_tools = list(obj)
+        print(f"✓ Found tool definitions in global `{name}` ({len(real_tools)} tools)")
+        break
+
+if real_tools is None:
+    print("⚠️  Could not locate the tool definitions automatically.")
+    print("    Candidate globals containing 'tool':")
+    for k, v in sorted(globals().items()):
+        if "tool" in k.lower() and not k.startswith("_"):
+            print(f"      {k}: {type(v).__name__}")
+    print("    Set `real_tools = <that object>` and re-run this cell.")
+else:
+    def normalize(t):
+        """Reduce either a dict schema or a python callable to {name: set(param_names)}."""
+        if isinstance(t, dict):
+            fn = t.get("function", t)
+            params = (fn.get("parameters") or {}).get("properties", {}) or {}
+            return fn.get("name", "?"), set(params.keys())
+        if callable(t):
+            return t.__name__, set(inspect.signature(t).parameters.keys())
+        decl = getattr(t, "declaration", None) or getattr(t, "_declaration", None)
+        if decl is not None:
+            params = getattr(decl, "parameters", None)
+            props = getattr(params, "properties", {}) if params else {}
+            return getattr(decl, "name", "?"), set(props.keys())
+        return str(t), set()
+
+    real = dict(normalize(t) for t in real_tools)
+    ours = dict(normalize(t) for t in COMPETITION_TOOLS)
+
+    print("\n" + "=" * 72)
+    print("PHASE 0.2: TOOL SCHEMA DIFF  (real ADK  vs  COMPETITION_TOOLS)")
+    print("=" * 72)
+
+    mismatches = []
+    for name in sorted(set(real) | set(ours)):
+        if name not in real:
+            mismatches.append(f"EXTRA    {name}: declared by us, absent from the harness")
+        elif name not in ours:
+            mismatches.append(f"MISSING  {name}: harness tool we never declare")
+        else:
+            only_real, only_ours = real[name] - ours[name], ours[name] - real[name]
+            if only_real or only_ours:
+                mismatches.append(
+                    f"PARAMS   {name}: harness-only={sorted(only_real) or '-'}  "
+                    f"ours-only={sorted(only_ours) or '-'}"
+                )
+            else:
+                print(f"  ✓ {name}({', '.join(sorted(real[name])) or ''})")
+
+    if mismatches:
+        print("\n  ✗ MISMATCHES FOUND:")
+        for m in mismatches:
+            print(f"      {m}")
+        print("\n  >>> Do NOT train until these are reconciled. Prefer importing the real")
+        print("      schemas over editing the copy — a copy drifts, an import cannot:")
+        print("          import chat_format; chat_format.COMPETITION_TOOLS = real_tools")
+    else:
+        print("\n  ✓ All tool names and parameter names match. Schemas are safe to train on.")
+    print("=" * 72)
+
+    # 2. Confirm the declarations actually survive into rendered training text (failure F2).
+    from transformers import AutoTokenizer
+    from chat_format import render
+    _tok = AutoTokenizer.from_pretrained(str(MODEL_PATH), local_files_only=True)
+    _probe = render([{"role": "user", "content": "probe"}], _tok, tools=COMPETITION_TOOLS)
+    _n = len(_tok(_probe, add_special_tokens=False)["input_ids"])
+    print(f"\nRendered preamble with tools: {_n} tokens")
+    print(f"Declarations present in text: {all(p in _probe for p in ('old_string','node_id','submit_patch'))}")
+    print("If that is False, the template is ignoring `tools=` and failure F2 is live.")
+```
+
+---
+
 ### PART 1: SETUP & CANONICAL FORMATTER (`chat_format.py`)
 
 #### Cell 1: `[Section 1 from Ryan's Notebook]`
@@ -477,8 +569,32 @@ for rec in raw_records:
 
 logger.info("✓ Tokenized %d trajectories (dropped %d > %d tokens).", len(kept), dropped_overflow, MAX_LEN)
 
+# --- Dataset survival gate -----------------------------------------------------------
+# Drop-don't-truncate is only safe at a generous budget. Combined with a large fixed
+# preamble and a reduced MAX_LEN it silently becomes a dataset filter. Fail loudly.
+DATASET_FLOOR = 60
+drop_rate = dropped_overflow / max(1, len(raw_records))
+assert len(kept) >= DATASET_FLOOR, (
+    f"Only {len(kept)} trajectories survived preprocessing (floor={DATASET_FLOOR}, "
+    f"dropped {dropped_overflow}). Raise MAX_LEN or left-truncate — do not train on this."
+)
+if drop_rate > 0.10:
+    logger.warning(
+        "⚠️  %.1f%% of trajectories dropped at MAX_LEN=%d. The surviving set is biased "
+        "toward short trajectories; raise MAX_LEN.", drop_rate * 100, MAX_LEN,
+    )
+
 verify_and_print_samples(kept, tokenizer, num_samples_to_print=3)
 tokenized_ds = Dataset.from_list(kept)
+
+# --- Optimizer-step gate -------------------------------------------------------------
+# A rank-32 LoRA trained for 2-4 optimizer steps is noise, not training.
+_steps = (len(kept) * 2) // 8   # num_train_epochs=2, grad_accum=8
+assert _steps >= 30, (
+    f"Schedule yields only {_steps} optimizer steps. Lower gradient_accumulation_steps "
+    f"or add data before spending GPU quota."
+)
+logger.info("✓ Schedule yields %d optimizer steps across 2 epochs.", _steps)
 
 # Asymmetric memory allocation: Gives GPU 0 massive headroom (~10 GiB free) while ensuring
 # total capacity (75 GiB) easily fits the 62.5 GB model with zero layers offloaded to meta!
@@ -684,12 +800,75 @@ max_turns = 12
 *(Deletes the buggy `or args == {}` check so zero-arg tools like `get_status()` are never miscounted as `submit_patch`, and tracks how many responses hit `max_output_tokens` to verify B1)*
 
 ```python
-import json
+import json, subprocess, tempfile
 from pathlib import Path
 import pandas as pd
 
 TRACES_DIR = Path("/kaggle/working/results/traces")
 pred_map = {p["id"]: p.get("prediction", "") for p in predictions} if "predictions" in globals() else {}
+
+# --- Discover the harness's resolution verdicts --------------------------------------
+# Section 5 runs verification (`verification_timeout_seconds`), so a pass/fail verdict
+# exists somewhere in its output. Field names vary by harness version, so probe for them
+# rather than guessing, and PRINT what was found so the mapping can be corrected once.
+RESOLVED_KEYS = ("resolved", "passed", "is_resolved", "success", "test_passed", "exit_code")
+
+def _extract_resolved(obj):
+    if not isinstance(obj, dict):
+        return None
+    for k in RESOLVED_KEYS:
+        if k in obj:
+            v = obj[k]
+            if k == "exit_code":
+                return v == 0
+            if isinstance(v, bool):
+                return v
+            if isinstance(v, str):
+                return v.strip().lower() in ("true", "pass", "passed", "resolved", "1")
+            if isinstance(v, (int, float)):
+                return bool(v)
+    for nested in ("verification", "evaluation", "result", "final_metrics", "report"):
+        if isinstance(obj.get(nested), dict):
+            r = _extract_resolved(obj[nested])
+            if r is not None:
+                return r
+    return None
+
+resolved_map = {}
+for _src_name in ("results", "eval_results", "predictions", "report"):
+    _src = globals().get(_src_name)
+    if isinstance(_src, list):
+        for _row in _src:
+            if isinstance(_row, dict):
+                _tid = _row.get("id") or _row.get("instance_id") or _row.get("task_id")
+                if _tid and _tid not in resolved_map:
+                    _r = _extract_resolved(_row)
+                    if _r is not None:
+                        resolved_map[_tid] = _r
+    elif isinstance(_src, dict):
+        for _tid, _row in _src.items():
+            if _tid not in resolved_map:
+                _r = _extract_resolved(_row)
+                if _r is not None:
+                    resolved_map[_tid] = _r
+
+if not resolved_map:
+    print("⚠️  No resolution verdicts found. Inspect the eval output and map the field:")
+    for _name in ("results", "eval_results", "predictions", "report"):
+        _s = globals().get(_name)
+        if isinstance(_s, list) and _s and isinstance(_s[0], dict):
+            print(f"    {_name}[0] keys -> {sorted(_s[0].keys())}")
+        elif isinstance(_s, dict) and _s:
+            _k0 = next(iter(_s))
+            print(f"    {_name}[{_k0!r}] keys -> "
+                  f"{sorted(_s[_k0].keys()) if isinstance(_s[_k0], dict) else type(_s[_k0])}")
+    print("    Then add the right name to RESOLVED_KEYS above.")
+else:
+    print(f"✓ Resolution verdicts found for {len(resolved_map)} task(s).")
+
+# Repo checkouts for `git apply --check`. Point this at wherever Section 5 unpacks them;
+# leave empty to report applies-cleanly as unknown rather than guessing.
+REPO_SNAPSHOTS = globals().get("REPO_SNAPSHOTS", {})
 
 records = []
 for p in sorted(TRACES_DIR.glob("trace_*.json")):
@@ -726,11 +905,31 @@ for p in sorted(TRACES_DIR.glob("trace_*.json")):
     patch_str = pred_map.get(t_id, "")
     has_nonempty_patch = bool(patch_str and "NO_PATCH" not in patch_str and len(patch_str.strip()) > 0)
 
+    # --- Does the diff even apply? (independent of the harness) ---
+    applies = None
+    if has_nonempty_patch:
+        repo_dir = REPO_SNAPSHOTS.get(t_id)
+        if repo_dir and Path(repo_dir).exists():
+            with tempfile.NamedTemporaryFile("w", suffix=".diff", delete=False) as fh:
+                fh.write(patch_str if patch_str.endswith("\n") else patch_str + "\n")
+                diff_path = fh.name
+            rc = subprocess.run(
+                ["git", "apply", "--check", diff_path],
+                cwd=repo_dir, capture_output=True, text=True,
+            )
+            applies = (rc.returncode == 0)
+            Path(diff_path).unlink(missing_ok=True)
+
+    # --- Did it actually resolve the task? (from the harness's own verification) ---
+    resolved = resolved_map.get(t_id)
+
     records.append({
         "Task ID": t_id,
         "Tool Calls": tool_call_count,
-        "Called submit_patch": "✓ YES" if called_submit else "❌ NO",
-        "Non-Empty Diff": "✓ YES" if has_nonempty_patch else "❌ NO_PATCH",
+        "Called submit_patch": "✓" if called_submit else "✗",
+        "Non-Empty Diff": "✓" if has_nonempty_patch else "✗",
+        "Applies Cleanly": {True: "✓", False: "✗", None: "?"}[applies],
+        "RESOLVED": {True: "✓ PASS", False: "✗ FAIL", None: "? unknown"}[resolved],
         "Patch Chars": len(patch_str) if has_nonempty_patch else 0,
         "Hit Max Tokens": max_tok_hits,
         "Files Edited": list(files_edited) if files_edited else "None",
@@ -739,11 +938,25 @@ for p in sorted(TRACES_DIR.glob("trace_*.json")):
 
 df = pd.DataFrame(records)
 display(df)
-n_sub = sum(df["Called submit_patch"] == "✓ YES")
-n_valid = sum(df["Non-Empty Diff"] == "✓ YES")
-print(f"Strict submit_patch Call Rate (C5 Fixed): {n_sub} / {len(df)} ({n_sub/max(1, len(df))*100:.1f}%)")
-print(f"Valid Non-Empty Diff Rate:                {n_valid} / {len(df)} ({n_valid/max(1, len(df))*100:.1f}%)")
-print(f"Total Steps Hitting Token Ceiling (B1):   {df['Hit Max Tokens'].sum()}")
+
+n = max(1, len(df))
+n_sub     = int((df["Called submit_patch"] == "✓").sum())
+n_valid   = int((df["Non-Empty Diff"] == "✓").sum())
+n_applies = int((df["Applies Cleanly"] == "✓").sum())
+n_resolved= int((df["RESOLVED"] == "✓ PASS").sum())
+n_unknown = int((df["RESOLVED"] == "? unknown").sum())
+
+print("=" * 62)
+print(f"  submit_patch called : {n_sub:>3} / {len(df)}  ({n_sub/n*100:5.1f}%)   [attempt]")
+print(f"  non-empty diff      : {n_valid:>3} / {len(df)}  ({n_valid/n*100:5.1f}%)   [attempt]")
+print(f"  applies cleanly     : {n_applies:>3} / {len(df)}  ({n_applies/n*100:5.1f}%)   [quality]")
+print(f"  >>> RESOLVED        : {n_resolved:>3} / {len(df)}  ({n_resolved/n*100:5.1f}%)   [THE METRIC]")
+print("=" * 62)
+print(f"  steps hitting token ceiling (F1 readout): {int(df['Hit Max Tokens'].sum())}")
+if n_unknown:
+    print(f"\n  ⚠️  {n_unknown} task(s) have no resolution verdict. Only the RESOLVED row")
+    print( "      correlates with the leaderboard — the first two measure attempts, not")
+    print( "      outcomes, and that gap is exactly failure F5. Wire up resolved_map.")
 ```
 
 ---

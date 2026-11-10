@@ -18,6 +18,46 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("chat_format")
 
+# --- F2 (silent preamble fallback) guards -------------------------------------------
+# Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
+# system-prompt preamble of ~1,830 tokens. A median below the preamble is arithmetically
+# impossible if the preamble is present, which proved the tool declarations were being
+# dropped by a `try/except Exception: pass` on every single training example.
+#
+# STRICT_TOOLS=True makes that condition raise instead of passing silently.
+STRICT_TOOLS: bool = True
+
+# Substrings that MUST appear in rendered text when tools are declared. Drawn from the
+# tool schemas themselves, so they fail if the template ignores an unsupported `tools=`.
+TOOL_RENDER_PROBES = ("old_string", "node_id", "submit_patch")
+
+# Populated whenever a render could not attach tool declarations; surfaced by
+# `assert_tool_rendering_clean()` so a run cannot end without the failure being seen.
+TOOL_RENDER_FAILURES: List[str] = []
+
+
+# --- Masking-path accounting --------------------------------------------------------
+# Phase 0.1 showed this template folds `<|tool_response>` blocks INSIDE the preceding
+# model turn, so appending a tool message rewrites earlier tokens and the incremental
+# prefix-diff path cannot hold. The span-marker fallback is therefore expected to run on
+# essentially every example. We count both so the assumption is visible, not assumed.
+MASK_PATH_COUNTS: Dict[str, int] = {"prefix_diff": 0, "span_marker": 0}
+
+
+def _record_tool_render_failure(reason: str) -> None:
+    TOOL_RENDER_FAILURES.append(reason)
+    logger.error("TOOL SCHEMA RENDER FAILURE (failure mode F2): %s", reason)
+
+
+def assert_tool_rendering_clean() -> None:
+    """Call after dataset construction. Raises if any example lost its tool declarations."""
+    if TOOL_RENDER_FAILURES:
+        raise RuntimeError(
+            f"{len(TOOL_RENDER_FAILURES)} tool-schema render failure(s); first: "
+            f"{TOOL_RENDER_FAILURES[0]}"
+        )
+    logger.info("✓ Tool declarations present in every rendered example (F2 gate passed).")
+
 # Phase 3.4 Budget-Based System Prompt (replaces the brittle 1-file/turn-3 prohibitions)
 DEFAULT_SYSTEM_PROMPT = """You are an autonomous software engineering agent equipped with a pre-computed repository code graph.
 
@@ -272,21 +312,53 @@ def render(
     Formats messages with the exact system prompt and tool declarations.
     """
     norm_msgs = normalize_messages(messages, system_prompt=system_prompt)
+
+    if not tools:
+        return tokenizer.apply_chat_template(
+            norm_msgs,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
+
     try:
-        if tools:
-            return tokenizer.apply_chat_template(
-                norm_msgs,
-                tools=tools,
-                tokenize=False,
-                add_generation_prompt=add_generation_prompt,
+        rendered = tokenizer.apply_chat_template(
+            norm_msgs,
+            tools=tools,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
+    except Exception as e:
+        # F2 FIX: FAIL CLOSED. The previous `except Exception: pass` silently dropped the
+        # tool declarations from EVERY training sequence while reporting success, so the
+        # policy never saw the schemas the eval harness sends. Never swallow this again.
+        _record_tool_render_failure(f"apply_chat_template(tools=...) raised: {e!r}")
+        if STRICT_TOOLS:
+            raise RuntimeError(
+                "Tool schemas could not be rendered into the chat template. "
+                "Training without them reproduces failure F2 (train/eval preamble mismatch). "
+                "Fix the template call, or set chat_format.STRICT_TOOLS = False to proceed "
+                "deliberately and without tool declarations."
+            ) from e
+        return tokenizer.apply_chat_template(
+            norm_msgs,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
+
+    # The call may succeed while silently ignoring an unsupported `tools` kwarg, which is
+    # exactly how F2 went undetected. Verify the declarations are actually in the text.
+    missing = [p for p in TOOL_RENDER_PROBES if p not in rendered]
+    if missing:
+        _record_tool_render_failure(
+            f"apply_chat_template accepted tools= but omitted {missing} from the output"
+        )
+        if STRICT_TOOLS:
+            raise RuntimeError(
+                f"Tool schemas absent from rendered text (missing probes: {missing}). "
+                "The template accepted `tools=` but did not emit the declarations. "
+                "This is failure F2; training would silently mismatch eval-time context."
             )
-    except Exception:
-        pass
-    return tokenizer.apply_chat_template(
-        norm_msgs,
-        tokenize=False,
-        add_generation_prompt=add_generation_prompt,
-    )
+    return rendered
 
 
 def _find_eot_token_id(tokenizer: Any) -> Optional[int]:
@@ -326,14 +398,13 @@ def build_example(
         prev_ids: List[int] = []
         for i, m in enumerate(norm_msgs):
             sub_msgs = norm_msgs[: i + 1]
-            try:
-                rendered_upto = (
-                    tokenizer.apply_chat_template(sub_msgs, tools=tools, tokenize=False)
-                    if tools
-                    else tokenizer.apply_chat_template(sub_msgs, tokenize=False)
-                )
-            except Exception:
-                rendered_upto = tokenizer.apply_chat_template(sub_msgs, tokenize=False)
+            # F2: no silent tools-dropping fallback here either. `render` fails closed.
+            rendered_upto = render(
+                sub_msgs,
+                tokenizer,
+                tools=tools,
+                system_prompt=None,  # already normalized; do not re-prepend
+            )
 
             # B4 fix: template already emits <bos>, so tokenize with add_special_tokens=False!
             upto_ids = list(tokenizer(rendered_upto, add_special_tokens=False)["input_ids"])
@@ -354,9 +425,12 @@ def build_example(
 
     if not prefix_ok or not input_ids or all(l == -100 for l in labels):
         # Exact span mask on the full rendered string (handles inline <|tool_response> blocks)
+        MASK_PATH_COUNTS["span_marker"] += 1
         rendered_full = render(raw_messages, tokenizer, tools=tools, system_prompt=system_prompt)
         input_ids = list(tokenizer(rendered_full, add_special_tokens=False)["input_ids"])
         labels = _mask_rendered_token_ids(input_ids, tokenizer)
+    else:
+        MASK_PATH_COUNTS["prefix_diff"] += 1
 
     # Ensure single BOS at index 0 if tokenizer defines bos_token_id
     bos_id = getattr(tokenizer, "bos_token_id", None)
@@ -485,25 +559,61 @@ def verify_and_print_samples(
     print("=== PHASE 1.2 PRE-TRAINING MASKING & EOT VERIFICATION GATE ===")
     print("=" * 80)
 
+    # Text that must NEVER carry gradient. If any of these appear in the supervised
+    # tokens, the model is being trained to hallucinate its own environment observations
+    # instead of calling tools — the second half of failure F1.
+    OBSERVATION_MARKERS = (
+        "<|tool_response>",      # native folded tool-response block
+        "File: ",                # read_file observation header
+        '"status": "ok"',        # edit_file / submit_patch observation payload
+        '"replacements"',        # edit_file observation payload
+        "### Problem",           # user-turn task text
+    )
+
+    n_checked = 0
     for idx, ex in enumerate(tokenized_samples[: max(5, num_samples_to_print)]):
         ids = ex["input_ids"]
         lab = ex["labels"]
         unmasked_ids = [i for i, l in zip(ids, lab) if l != -100]
+        n_checked += 1
 
         assert any(l != -100 for l in lab), f"Sample {idx}: all labels are masked (-100)!"
         assert any(l == -100 for l in lab), f"Sample {idx}: nothing masked — user/system turns are trainable!"
+
+        # Supervised fraction. The old `any(l == -100)` check was satisfied by the system
+        # prompt alone, so it passed even when every observation was trainable. A healthy
+        # agent trajectory supervises roughly 5-35% of its tokens.
+        frac = len(unmasked_ids) / max(1, len(ids))
+        assert 0.03 < frac < 0.45, (
+            f"Sample {idx}: supervised fraction {frac:.1%} out of range "
+            f"({len(unmasked_ids)}/{len(ids)} tokens). "
+            f"Too high => user/observation turns are trainable; too low => assistant spans are masked."
+        )
+
+        # Observation-leakage check.
+        decoded_unmasked = tokenizer.decode(unmasked_ids, skip_special_tokens=False)
+        for marker in OBSERVATION_MARKERS:
+            assert marker not in decoded_unmasked, (
+                f"Sample {idx}: observation text {marker!r} leaked into trainable labels — "
+                f"the model is being taught to generate its own tool outputs."
+            )
+
         if bos_id is not None and bos_id in ids:
             bos_count = ids.count(bos_id)
             assert bos_count == 1, f"Sample {idx}: Double-BOS detected (bos_count={bos_count})!"
         if eot_id is not None and eot_id in ids:
             assert eot_id in unmasked_ids, (
-                f"Sample {idx}: End-of-turn token (id={eot_id}) is NOT trainable in labels!"
+                f"Sample {idx}: End-of-turn token (id={eot_id}) is NOT trainable in labels! "
+                f"This is failure F1: the policy will never learn to terminate a turn."
             )
 
         if idx < num_samples_to_print:
-            decoded_unmasked = tokenizer.decode(unmasked_ids, skip_special_tokens=False)
-            print(f"\n--- Sample {idx} Unmasked Trainable Tokens ({len(unmasked_ids)}/{len(ids)} tokens) ---")
+            print(f"\n--- Sample {idx} Unmasked Trainable Tokens ({len(unmasked_ids)}/{len(ids)} = {frac:.1%}) ---")
             print(decoded_unmasked[:900] + (" ... [truncated]" if len(decoded_unmasked) > 900 else ""))
 
-    print("\n✓ Phase 1.2 Gate PASSED: Assistant-only spans + EOT stop tokens verified!")
+    print(f"\n[mask] paths used: {MASK_PATH_COUNTS}")
+    print(f"[mask] samples checked: {n_checked}")
+    assert_tool_rendering_clean()
+    print("\n✓ Phase 1.2 Gate PASSED: assistant-only spans, EOT supervised, no observation leakage.")
+    print("  READ THE DECODED TEXT ABOVE. It must be assistant turns only — nothing else.")
     print("=" * 80)

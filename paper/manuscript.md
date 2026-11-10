@@ -1,454 +1,474 @@
-# RepoGraphForge: Post-Training Lightweight Coding Agents via Code-Graph Trajectory Synthesis and Rubric-Guided Rejection Fine-Tuning
+# Why Agentic SFT Silently Fails: A Failure Taxonomy from Post-Training a 31B Code Agent
 
-**Author:** Elena Kalinina  
-**Affiliation:** Independent Research / Kaggle Gemma 4 Developer Agent Competition  
-**Track:** Google DeepMind - The Gemma 4 Developer Agent Paper Track  
-**Date:** November 2026  
+**Author:** Elena Kalinina
+**Affiliation:** Independent Research / Kaggle Gemma 4 Developer Agent Competition
+**Track:** Google DeepMind — The Gemma 4 Developer Agent Paper Track
+**Date:** November 2026
 
 ---
 
 ## Abstract
 
-Autonomous software engineering (SWE) agents powered by frontier cloud models achieve remarkable bug-fixing performance, yet privacy requirements, corporate security boundaries, and edge deployments necessitate developer agents that operate completely offline on consumer and workstation hardware. However, deploying open-weights models like Gemma 4 (31B and 12B) in repository-scale environments reveals two fundamental bottlenecks: (1) **Context Quicksand & Action Hesitation**, where models rely on brute-force text search (`grep`, `find`) and get trapped reading multi-thousand-line files rather than editing, and (2) **Evaluation Drift**, where unanchored LLM judges ($V_{\text{free}}$) exhibit severe sycophancy, falsely rejecting correct multi-file patches or rewarding superficial single-file edits that break downstream callers. 
+Supervised fine-tuning of tool-using agents is usually monitored with a scalar training loss. We report a post-training campaign on Gemma 4 31B for repository-level bug fixing in which the loss converged cleanly in every run — in one case from 2.046 to 0.3935 — while end-task resolution remained at approximately zero throughout. We trace this gap to five distinct defects, each of which is structurally invisible to a loss curve.
 
-In this paper, we introduce **RepoGraphForge**, an adaptation of GraphForge (`arXiv:2609.38923`) that turns pre-computed repository multigraphs $G = (V, E)$ and 256-dimensional node embeddings into an active post-training engine. RepoGraphForge extracts multi-hop connected subgraphs combining 2-hop structural traversals with semantic neighbor expansion, applies reverse fault injection to synthesize cross-node bug tasks, and compiles structural Evidence Rubrics ($R_G$) anchored to caller/callee contracts. 
+These are: **(F1) stop-token starvation**, in which the end-of-turn token receives no gradient because a masking loop clears its label, producing a policy that cannot terminate a turn and emits tool calls as conversational prose; **(F2) silent preamble fallback**, in which the code path that aligns training context with evaluation context fails open, so tool declarations are absent from every training sequence while the pipeline reports success; **(F3) inter-stage format drift**, in which a rejection-sampling stage accepted only markdown-fenced patches, contained zero tool calls, and — running last — erased the tool-calling behaviour the preceding stage had taught; **(F4) serialization fragmentation**, in which four mutually incompatible tool-call encodings coexisted in one pipeline, none of which matched the serving template; and **(F5) unfalsifiable metrics**, in which the audit counted submission attempts rather than resolved tasks, reporting 85.7% where the true resolution rate was 0.0%.
 
-Across 386 candidate patches evaluated offline on 4x NVIDIA L4 GPUs, we demonstrate that GraphForge rubric judges ($V_{\text{graph}}$) increase valid patch recall from **0.6512 to 0.7442** (+14.28% relative gain) and boost inter-rater agreement with ground-truth test execution ($V_{\text{exec}}$) from Cohen's $\kappa = 0.6401$ to **$\kappa = 0.7051$** (crossing into substantial agreement). In Rejection Fine-Tuning (RFT), $V_{\text{graph}}$ yields an exact **$2\times$ higher task acceptance rate (8.0% vs. 4.0%)** over $V_{\text{free}}$ with zero false-positive drift. Finally, we formulate the **Anti-Hesitation Action Gate**, enabling a fine-tuned Gemma 4 31B agent to solve out-of-distribution repository tasks in 53 seconds flat with 7 tool calls to spare. We open-source our complete synthetic trajectory suite, rubric generator, and fine-tuning pipelines.
+For each failure we give the mechanism, the code that produces it, its observable signature, and a corrective assertion. We additionally report a controlled verifier study over candidate patches indicating that anchoring an LLM judge to structural code-graph contracts improves agreement with deterministic test execution relative to an unanchored judge. We make no claim that code-graph anchoring improves end-task agent performance; our resolution rates are too close to zero to support one. Our contribution is diagnostic: agentic post-training pipelines require **structural gates** — on label coverage, stop-token supervision, dataset survival, and inter-stage format identity — because scalar loss cannot observe any of them. We release the diagnostic harness.
 
 ---
 
 ## 1. Introduction
 
-Software engineering in modern multi-file repositories requires reasoning across intricate caller/callee dependencies, implicit type contracts, and cross-module interfaces. While proprietary frontier models operating in cloud environments have established impressive SWE-bench benchmarks, enterprise codebases frequently cannot be transmitted to external APIs due to strict data sovereignty, compliance, and IP constraints. The release of Google's Gemma 4 family of open models—specifically the 31B and 12B parameter quantization-aware-trained (QAT) variants—provides an unprecedented foundation for running local, privacy-preserving developer agents directly on developer workstations and edge clusters.
+Open-weights models such as Google's Gemma 4 family make locally hosted, privacy-preserving software-engineering agents feasible for organisations that cannot transmit source code to external APIs. Adapting such a model into a competent repository agent is ordinarily framed as a data and objective problem: collect trajectories, fine-tune, measure the loss, evaluate.
 
-However, fine-tuning and deploying open-weights models as autonomous repository agents introduces three severe, interrelated failure modes:
+We undertook exactly this. Over five post-training runs on Gemma 4 31B — supervised fine-tuning on code-graph-anchored trajectories, followed by best-of-$N$ rejection fine-tuning filtered by structural rubrics — every run produced a smooth, converging loss curve. Every run also produced an agent that resolved approximately zero held-out tasks. The leaderboard scores across the campaign were 0.00, 0.00, 0.00, 0.03, 0.01, and 0.00.
 
-1. **The Context Quicksand Problem:** Pre-trained causal language models default to text-based search tools (`grep`, `find`) and sequential file chunk-reading. When faced with large repositories, agents frequently burn their entire turn budget and saturate their 32k context window reading hundreds of lines of code without localizing the defect.
-2. **The Action Hesitation Trap:** Even when an agent successfully localizes a bug to a specific class or function, it frequently suffers from analysis paralysis—reading secondary compatibility shims or helper utilities rather than invoking file editing tools, ultimately timing out without producing a patch (`NO_PATCH`).
-3. **The Verifier Alignment & Sycophantic Drift Gap:** When post-training agents via Reinforcement Learning or Rejection Fine-Tuning (RFT), candidate code modifications must be graded. Running exhaustive test suites ($V_{\text{exec}}$) in isolated Docker sandboxes is computationally slow and vulnerable to sparse test coverage. Conversely, standard unanchored LLM-as-a-Judge evaluators ($V_{\text{free}}$) exhibit sycophantic bias: they reward plausible-looking single-file diffs while failing to verify whether caller/callee invariants were broken across file boundaries.
+The central observation of this paper is that **the loss curve was never going to reveal why.** A cross-entropy loss over a token sequence is a scalar summary. It cannot report which tokens carried gradient, what fraction of the sequence was supervised, whether the token that terminates a turn appeared in the labels at all, whether the tool declarations the evaluation harness sends were present during training, or how many training examples survived preprocessing. Each of those was wrong at some point in our campaign, and each was wrong *silently*: the pipeline logged success, the loss fell, and the agent did not work.
 
-### The RepoGraphForge Paradigm
-To resolve these challenges without requiring external frontier APIs, we propose **RepoGraphForge**, adapting the GraphForge framework (`arXiv:2609.38923`) to the domain of repository-scale software engineering. Rather than treating pre-computed code graphs as static runtime lookup tables, RepoGraphForge uses them as an active **task generator, trajectory teacher, and rubric verifier**:
+This paper is the post-mortem. We present five failures as a taxonomy (§5), each with mechanism, signature, fix, and a runnable assertion that would have caught it. We report the one experiment that survives the campaign as a positive result — a verifier-alignment study (§6) that is methodologically independent of the agent failures because it evaluates static patches rather than agent rollouts. We then generalise the taxonomy into a set of structural gates for agentic post-training (§8), which we regard as the paper's practical contribution.
 
-```
-Pre-computed Repository Graphs G = (V, E)
-                   │
-                   ▼
-  [Step 1: Multi-Hop Subgraph Sampling]
-  2-Hop Structural Ego-Graphs + Cosine Embedding Neighbors
-                   │
-                   ▼
-  [Step 2: Reverse Fault Injection & Synthesis]
-  Mutated Bug Diffs + Repro Pytests + Structural Evidence Rubrics (R_G)
-                   │
-                   ▼
-  [Step 3: Multi-Turn Expert Teacher Rollouts]
-  Native <tool_call> Token Formatting (Graph -> Read -> Edit -> Submit)
-                   │
-                   ▼
-  [Step 4: Two-Stage Post-Training on Gemma 4 31B]
-  Stage 4A: QLoRA SFT  ──►  Stage 4B: Best-of-N Rejection Fine-Tuning (V_graph)
-                   │
-                   ▼
-  [Step 5: Autonomous Execution via Anti-Hesitation Action Gate]
-```
+### 1.1 What this paper does and does not claim
 
-### Summary of Contributions
-1. **Evidence-Anchored Verification at Repository Scale:** We formalize GraphForge structural rubrics ($R_G$) for code repositories, evaluating 386 candidate patches (stratified across partial contract omissions and task-specific sycophantic drift mutations) and demonstrating that anchoring LLM judges to graph dependency contracts boosts recall by **+14.28% relative** and achieves substantial agreement ($\kappa = 0.7051$) with ground-truth unit tests.
-2. **End-of-Turn (EOT) Loss Masking & Label Direction Ablation:** We identify and formally analyze three critical post-training failure modes in tool-calling coding agents—(a) *End-of-Turn (`<turn|>`) Loss Masking*, which silently prevents turn termination and causes run-on generation up to `max_output_tokens`, (b) *Reverse-Mutation Label Inversion* ($\Delta_{\text{bug}}$ vs. $\Delta_{\text{gold}}$), and (c) *RFT Markdown-Fence Drift*—and provide a single canonical formatting and verification gate (`src/chat_format.py`) to eliminate them.
-3. **Real-Task Grounded Trajectory Construction vs. Synthetic Screenplays:** We pair 115 ground-truth maintainer fixes (`train_tasks.jsonl`) with code-graph neighborhoods and exact hunk spans (`src/build_real_sft.py`) alongside reverse-mutated synthetic tasks, ensuring `read_file` observations and `edit_file` replacements are 100% grounded in real repository code.
-4. **Offline Generalization to Unseen Repositories:** Under a strict anti-leakage partition (`psf/requests` and `encode/httpx`), our fine-tuned Gemma 4 31B agent localizes, edits, and resolves out-of-distribution repository defects completely offline (including a 3-tool-call, 18.9s `pytest`-verified resolution on `requests_6644` and an exact maintainer-equivalent fix on `requests_7433`).
+We are explicit about the boundary, because the original framing of this work claimed more.
 
-### 1.1 Four Core Architectural Advantages of the GraphForge Approach
+**We claim:** that these five defects occurred, that we have identified their mechanisms, that each is invisible to the training loss, and that each admits a cheap structural assertion. We claim the verifier-alignment result of §6 within its stated limitations.
 
-To clearly articulate why adapting GraphForge to software repositories represents a categorical advance over traditional autonomous coding agents, we outline its four core technical advantages:
+**We do not claim:** that code-graph anchoring improves end-task agent performance. Our resolution rate never exceeded 1 of 14 held-out tasks. Any such claim would require a working agent as a baseline, which we do not have. The system described in §3 should be read as the setting in which the failures occurred, not as a validated method.
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                   THE FOUR ARCHITECTURAL ADVANTAGES OF REPO-GRAPH-FORGE                │
-├──────────────────────────┬─────────────────────────────────┬───────────────────────────┤
-│ Dimension                │ Traditional Coding Agents       │ RepoGraphForge Approach   │
-├──────────────────────────┼─────────────────────────────────┼───────────────────────────┤
-│ 1. Context Efficiency    │ Sequential file reading (3–4k   │ Node-span targeting (120  │
-│                          │ tokens/turn; context quicksand) │ tokens/turn; >90% saving) │
-├──────────────────────────┼─────────────────────────────────┼───────────────────────────┤
-│ 2. Localization Latency  │ Brute-force grep/find loops     │ In-memory NetworkX lookup │
-│                          │ (45–60s trial-and-error)        │ (sub-0.1s graph retrieval)│
-├──────────────────────────┼─────────────────────────────────┼───────────────────────────┤
-│ 3. Semantic Indirection  │ Pure AST syntax misses dynamic   │ 256-dim embedding cosine  │
-│                          │ delegation (__getattr__, proxy) │ neighbors bridge duck-type│
-├──────────────────────────┼─────────────────────────────────┼───────────────────────────┤
-│ 4. Verification Fidelity │ Unanchored LLM judge (sycophant │ GraphForge Evidence Rubric│
-│                          │ drift; 35% false rejection)     │ (R_G contracts; 2x recall)│
-└──────────────────────────┴─────────────────────────────────┴───────────────────────────┘
-```
+### 1.2 Contributions
 
-1. **Advantage 1: >90% Context Token Compression (The Context Quicksand Defense):** Traditional agents default to dumping multi-thousand-line files (e.g. `src/requests/models.py`, 1,185 lines / ~3,800 tokens) into the context window, rapidly diluting attention mechanisms. GraphForge indexes code into atomic AST nodes with pre-computed `line_span` boundaries. Querying `get_code_subgraph` returns the structural neighborhood in $\sim 120$ tokens, and targeted span-reading consumes $\sim 180$ tokens—delivering a **$>92\%$ reduction in context token consumption** per turn.
-2. **Advantage 2: Sub-Second Structural Retrieval vs. Shell Wandering:** Baseline models frequently spend 3–4 consecutive turns (~45 seconds) battling shell syntax and regex escaping traps (e.g. `grep -n \"def func\"` returning exit code 1). GraphForge replaces fragile shell invocations with in-memory NetworkX multigraph traversals, resolving caller/callee symbols in **sub-0.1 seconds**.
-3. **Advantage 3: Semantic Embedding Expansion Resolves Lexical Mismatches:** Pure AST callgraphs only connect explicit imports and call signatures, failing on Python dynamic delegation (e.g., `__getattr__` proxy wrappers, duck-typed `SupportsRead` objects). By augmenting 2-hop structural ego-graphs with cosine similarity over 256-dimensional node embeddings ($\mathbf{z}_u \cdot \mathbf{z}_v$), GraphForge clusters conceptual relatives across module boundaries that syntactic parsers miss.
-4. **Advantage 4: Caller/Callee Contract Preservation Prevents False-Positive Drift:** Free-form LLM judges ($V_{\text{free}}$) exhibit severe sycophancy, rewarding superficial single-file edits while failing to check whether caller signatures are preserved across file boundaries. GraphForge generates Evidence Rubrics ($R_G$) anchored to incoming and outgoing graph edges ($N_{\text{in}}(G_S), N_{\text{out}}(G_S)$), eliminating false rejections, boosting recall by **+14.28% relative**, and doubling rollout acceptance in Rejection Fine-Tuning (8.0% vs. 4.0%).
+1. **A taxonomy of five silent failures in agentic post-training** (§5), each with mechanism, observable signature, corrective fix, and a runnable assertion.
+2. **An environment-grounded account of tool-call serialization drift** (§5.4, Appendix A), including a dump of the real Gemma 4 chat template that contradicts the format our own earlier methodology section documented.
+3. **A verifier-alignment study** (§6) comparing unanchored and rubric-anchored LLM judges against deterministic test execution, reported with its contamination caveats stated.
+4. **A set of structural gates for agentic post-training pipelines** (§8), stated as assertions a practitioner can paste into their own trainer.
+5. **A released diagnostic harness** (`src/chat_format.py` and the verification gate) implementing those assertions.
 
 ---
 
-## 2. Research Questions & Hypotheses
+## 2. Background
 
-Our empirical investigation is structured around three primary research questions:
+**Agentic supervised fine-tuning.** Training a model to use tools means training it to emit structured calls, consume environment observations, and terminate turns so the harness can execute the call. The target distribution therefore includes control tokens whose semantics are defined by the serving stack, not by the data. This differs from ordinary instruction tuning, where the model's output is consumed as text and the only structural requirement is to stop at the end.
 
-### Research Question 1 ($RQ_1$): Verifier Alignment & Sycophantic Patch Drift
-> **$RQ_1$:** *To what extent do GraphForge's evidence-anchored structural rubrics ($V_{\text{graph}}$) correlate with deterministic execution oracles ($V_{\text{exec}}$) compared to unanchored LLM judges ($V_{\text{free}}$), and does graph anchoring reduce false-positive patch drift on repository tasks?*
+**Rejection fine-tuning.** Sampling $N$ rollouts per task, filtering with a verifier, and fine-tuning on the survivors is a standard variance-reduction step. Because it runs *after* supervised fine-tuning, its data distribution overwrites the earlier stage's. If the filter's acceptance criterion is not expressed in the same output format the earlier stage taught, the later stage will systematically select against that format (§5.3).
 
-* **Hypothesis $H_1$ (Contract Alignment):** Unanchored judges ($V_{\text{free}}$) exhibit high false-rejection rates on valid non-trivial diffs and high false-acceptance rates on plausible single-file edits that violate downstream caller contracts. Graph-anchored rubrics ($V_{\text{graph}}$) enforce explicit call-site invariants, substantially improving recall ($> +10\%$ relative) and inter-rater reliability ($\kappa > 0.70$) against deterministic pytest oracles.
+**LLM-as-a-judge and verification.** Running full test suites is slow and limited by coverage, so LLM judges are commonly substituted. Unanchored judges are known to be unreliable. Anchoring them to explicit criteria is the motivation for the rubric study in §6.
 
-### Research Question 2 ($RQ_2$): Multi-Hop Navigation & Cross-File Indirection
-> **$RQ_2$:** *What architectural boundaries separate single-file defect repair from cross-file defect repair, and can graph-guided trajectory synthesis teach lightweight models to cross file boundaries without context quicksand?*
-
-* **Hypothesis $H_2$ (Indirection Boundary):** Agents trained purely on single-file bug fixes will suffer catastrophic performance drops on cross-file defects (where the symptom occurs in caller module $A$ but the predicate fix resides in imported utility $B$), degrading into sequential file reading and timing out. Subgraph synthesis combining 2-hop structural ego-graphs with cosine-similar semantic neighbors provides the necessary supervision to teach multi-hop navigation.
-
-### Research Question 3 ($RQ_3$): Exploration Variance & Anti-Hesitation in RFT
-> **$RQ_3$:** *How does Best-of-$N$ Rejection Fine-Tuning filtered by $V_{\text{graph}}$ affect single-path exploration variance and tool-budget exhaustion on held-out repositories?*
-
-* **Hypothesis $H_3$ (Variance Reduction):** Supervised Fine-Tuning (SFT) imparts task capability but retains high exploration variance under greedy single-path inference. Best-of-$N$ Rejection Fine-Tuning ($N \ge 4$) curated via $V_{\text{graph}}$ shortest-path selection locks in concise 3-to-4 turn navigation habits, eliminating turn-budget exhaustion and doubling pass rates over baseline greedy SFT.
-
-### Research Question 4 ($RQ_4$): Model Scale & Edge Hardware Feasibility
-> **$RQ_4$:** *How does RepoGraphForge post-training transfer across the Gemma 4 model hierarchy (31B, 12B, E4B, E2B), and can lightweight models running on everyday developer hardware match or exceed the zero-shot capabilities of unadapted flagship models?*
-
-* **Hypothesis $H_4$ (Edge Capability Inversion):** Zero-shot flagship models (31B) fail on repository tasks due to unstructured tool wandering. Grounding lightweight models (12B, E4B) in graph-guided trajectories allows them to surpass zero-shot 31B performance while reducing memory footprints by over 60% and cutting latency by $>2\times$, making autonomous developer agents practical on everyday consumer hardware.
+**Silent failure.** The failures in this paper share a property: a defective pipeline and a correct pipeline produce *indistinguishable training loss curves*. This is not specific to our setting. Any pipeline in which preprocessing, masking, and serving format are separate from the objective can exhibit it.
 
 ---
 
-## 3. Methodology: The RepoGraphForge Framework
+## 3. System Description
 
-RepoGraphForge operationalizes code graphs across three distinct phases: (1) Graph Ingestion & Subgraph Sampling, (2) Reverse Task & Rubric Synthesis, and (3) Two-Stage Post-Training (SFT + RFT).
+This section describes the pipeline in which the failures occurred. It is a system description, not a set of validated results. Where a component was never verified, we say so.
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                   Phase 1: Multi-Hop Subgraph Sampling                  │
-│                                                                        │
-│   Repo Multigraph G = (V, E) ──► Structural 2-Hop Ego-Graph G_struct    │
-│   256-dim Node Embeddings   ──► Cosine Nearest Neighbors G_semantic    │
-│                                           │                            │
-│                                           ▼                            │
-│                         Connected Subgraph G_S = (V_S, E_S)            │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────▼────────────────────────────────────┐
-│              Phase 2: Reverse Fault Injection & Rubric Synthesis        │
-│                                                                        │
-│   Working Code at base_commit ──► Inject Multi-Node Bug (Teacher LLM)   │
-│                                           │                            │
-│                    ┌──────────────────────┴──────────────────────┐     │
-│                    ▼                                             ▼     │
-│             Mutated Patch Δ_bug                         Pytest Oracle   │
-│             Gold Fix Δ_gold = -Δ_bug                    Evidence Rubric │
-│             Issue Description                           R_G Contracts   │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────▼────────────────────────────────────┐
-│               Phase 3: Two-Stage Post-Training (Gemma 4 31B)           │
-│                                                                        │
-│   Teacher Trajectories ──► Stage 4A: QLoRA SFT (Native <tool_call>)     │
-│                                           │                            │
-│                                           ▼                            │
-│   Candidate Rollouts (N=4) ──► Stage 4B: RFT Filtered by V_graph       │
-│                                           │                            │
-│                                           ▼                            │
-│                     Final RepoGraphForge Agent Policy                   │
-└────────────────────────────────────────────────────────────────────────┘
-```
+### 3.1 Repository multigraph ingestion and ego-subgraph sampling
 
-### 3.1 Repository Multigraph Ingestion & Ego-Subgraph Sampling
-Modern software projects represent complex multigraphs $G = (V, E)$, where vertices $v \in V$ correspond to modules, classes, methods, and standalone functions, and directed multigraph edges $e = (u, v, k) \in E$ capture semantic relationships:
-\[
-k \in \{\text{imports}, \text{calls}, \text{inherits}, \text{overrides}\}
-\]
-In addition, each node $v$ is associated with a pre-computed 256-dimensional dense embedding vector $\mathbf{z}_v \in \mathbb{R}^{256}$ derived from structural source code encoders.
+The competition provides pre-computed repository multigraphs $G = (V, E)$, where vertices correspond to modules, classes, methods, and functions, and directed multigraph edges capture $k \in \{\text{imports}, \text{calls}, \text{inherits}, \text{overrides}\}$. Each node $v$ carries a 256-dimensional embedding $\mathbf{z}_v \in \mathbb{R}^{256}$.
 
-To synthesize realistic multi-file tasks, `src/graph_sampler.py` samples an anchor node $v_0$ and extracts a connected subgraph $G_S = (V_S, E_S)$ combining two complementary traversals:
-1. **Structural 2-Hop Ego-Graph:** Breadth-first traversal up to radius $r=2$ along caller/callee directed edges:
-   \[
-   V_{\text{struct}} = \{v \in V \mid \text{dist}_G(v_0, v) \le 2\}
-   \]
-2. **Semantic Embedding Expansion:** Top-$k$ nearest neighbors in embedding space to capture non-import conceptual couplings (e.g., shared schema definitions, serialization wrappers):
-   \[
-   V_{\text{semantic}} = \operatorname{arg\,top\,k}_{u \in V \setminus V_{\text{struct}}} \cos(\mathbf{z}_{v_0}, \mathbf{z}_u)
-   \]
-The union $V_S = V_{\text{struct}} \cup V_{\text{semantic}}$ forms an induced subgraph $G_S$ spanning between 3 and 8 nodes across 1 to 3 distinct source files.
+`src/graph_sampler.py` samples an anchor node $v_0$ and extracts a connected subgraph $G_S = (V_S, E_S)$ combining:
 
-### 3.2 Reverse Fault Injection & Evidence Rubric Synthesis
-Directly generating realistic code defects from scratch frequently results in synthetic artifacts that do not resemble real developer pull requests. RepoGraphForge utilizes **reverse fault injection** on clean, working repository commits:
-1. **Clean Baseline Verification:** All existing unit tests linked to nodes in $V_S$ must execute and pass under `pytest`.
-2. **Mutated Diff Generation:** A teacher model introduces a subtle cross-node contract violation across 1–2 nodes in $G_S$ (e.g., altering a parameter type, omitting stream state rewinds, or mishandling proxy wrappers). The generated diff constitutes the bug patch $\Delta_{\text{bug}}$, and its exact inversion constitutes the ground-truth fix:
-   \[
-   \Delta_{\text{gold}} = -\Delta_{\text{bug}}
-   \]
-3. **Reproduction Test Synthesis:** A reproduction unit test is generated that fails on code patched with $\Delta_{\text{bug}}$ and passes deterministically on the original clean commit.
-4. **Evidence Rubric ($R_G$) Compilation:** For each task, we synthesize a structured checklist of 3–5 verifiable criteria anchored to the specific node identifiers in $G_S$:
-   - *Target Symbol Invariant:* Specific methods/classes requiring modification.
-   - *Interface & Type Contracts:* Exact argument types and return invariants preserved for caller nodes $N_{\text{in}}(G_S)$.
-   - *Exception & Regression Invariants:* Proper propagation or catching of domain exceptions.
+1. **Structural 2-hop ego-graph:** $V_{\text{struct}} = \{v \in V \mid \text{dist}_G(v_0, v) \le 2\}$.
+2. **Semantic embedding expansion:** $V_{\text{semantic}} = \operatorname{arg\,top\,k}_{u \in V \setminus V_{\text{struct}}} \cos(\mathbf{z}_{v_0}, \mathbf{z}_u)$, capturing couplings not expressed as imports.
 
-### 3.3 The Three Verifier Regimes
-During verification and Rejection Fine-Tuning, candidate trajectories and patches $\hat{y}$ are evaluated under three distinct regimes:
+The union $V_S = V_{\text{struct}} \cup V_{\text{semantic}}$ induces $G_S$, spanning 3–8 nodes across 1–3 source files. We sampled 1,139 such subgraphs across `fastapi/fastapi` and `Textualize/rich`.
 
-1. **Unanchored LLM Judge ($V_{\text{free}}$):** Standard LLM-as-a-Judge provided with only the issue description $x$ and the candidate patch $\hat{y}$:
-   \[
-   V_{\text{free}}(x, \hat{y}) \in \{\text{PASS}, \text{FAIL}\}
-   \]
-2. **GraphForge Evidence Rubric Judge ($V_{\text{graph}}$):** The evaluator evaluates the candidate patch strictly against the node contracts in $R_G$:
-   \[
-   V_{\text{graph}}(x, \hat{y}, R_G) = \begin{cases} \text{PASS} & \text{if } \forall c_i \in R_G, \hat{y} \models c_i \\ \text{FAIL} & \text{otherwise} \end{cases}
-   \]
-3. **Deterministic Execution Oracle ($V_{\text{exec}}$):** Ground-truth execution of the official `test_patch` via `pytest` inside an isolated sandbox container (exit code $0 = \text{PASS}$, non-zero $= \text{FAIL}$).
+### 3.2 Task synthesis and evidence rubric compilation
 
-### 3.4 Two-Stage Parameter-Efficient Post-Training Architecture
+Two task sources were used, and the distinction matters for interpreting every result below.
 
-The post-training pipeline of RepoGraphForge addresses a fundamental challenge in agentic reinforcement learning: **the exploration-capability duality**. A verifier or reward model—no matter how aligned—cannot reinforce a behavior that the underlying policy has zero probability of generating:
-\[
-\mathbb{P}_{\pi_\theta}(\text{cross-file jump} \mid \text{caller traceback}) \approx 0 \implies \nabla_\theta \mathcal{J}(\theta) = \mathbf{0}
-\]
-When an unadapted or single-file fine-tuned model encounters cross-file indirection (e.g., the symptom appears in caller `models.py`, but the predicate fix resides in imported utility `utils.py`), sampling rollouts under temperature $T > 0$ almost exclusively produces caller-file paging loops. Filtering such rollouts with $V_{\text{graph}}$ yields an empty set ($\emptyset$), rendering direct rejection fine-tuning or policy gradients ineffective.
+**Synthetic tasks (reverse fault injection).** A teacher model is shown a subgraph and asked to introduce a cross-node contract violation, producing a bug patch $\Delta_{\text{bug}}$, a reproduction test, and an evidence rubric. The intended ground-truth fix is the inversion $\Delta_{\text{gold}} = -\Delta_{\text{bug}}$.
 
-To overcome this, RepoGraphForge implements a strictly sequenced **two-stage post-training flywheel**:
+*Verification status: none.* The generated patches were never applied to a repository, the reproduction tests were never executed, and the trajectory admission filter was a length check (`len(messages) >= 4`). The synthesiser was additionally prompted with node *names* only, never source text, so generated diffs reference invented context lines. An early version of the pipeline also passed $\Delta_{\text{bug}}$ to the trajectory teacher under the label "Reference Fix Patch", inverting the training target (§5.6).
 
-```
-Pre-trained Gemma 4 31B (Unadapted)
-              │
-              ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Stage 4A: Multi-Hop Supervised Fine-Tuning (SFT)            │
-│ • Objective: Capability Induction                           │
-│ • Supervision: Verified multi-hop teacher trajectories      │
-│ • Teaches: Native <tool_call> tokens & cross-file jumping   │
-│ • Optimization: AdamW, lr=2e-4, cosine decay, 3 epochs      │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-                Policy Checkpoint π_SFT
-              (Capable of cross-file jumps)
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Stage 4B: GraphForge Rejection Fine-Tuning (RFT)           │
-│ • Objective: Variance Reduction & Path Shortening           │
-│ • Rollout Sampling: N=4 candidates per task @ T=0.7         │
-│ • Verifier Filter: GraphForge Evidence Rubric (V_graph)     │
-│ • Selection Curriculum: Shortest passing trajectory per task│
-│ • Alignment: Gentle pass, lr=5e-5, 1–2 epochs               │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-           Final RepoGraphForge Agent Policy π_RFT
-        (High resolution + zero action hesitation)
-```
+**Grounded tasks.** `src/build_real_sft.py` constructs trajectories from the 115 real training tasks, whose `patch` field is the maintainer's actual fix. Real graph nodes populate the subgraph turn; exact pre-fix and post-fix hunk text populate the `read_file` and `edit_file` turns.
 
-#### Stage 4A: Multi-Hop Supervised Fine-Tuning (Capability Induction)
-The goal of Stage 4A is to inject the structural syntax of tool execution and establish the multi-hop cross-file navigation reflex. We fine-tune Gemma 4 31B using rank-32 Low-Rank Adaptation (LoRA, $r=32, \alpha=64$) across all 410 linear projections of the text transformer backbone (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`).
+*Verification status: patch direction checked; observations synthetic.* The observation strings are constructed to a plausible format rather than captured from the live tool (§5.4).
 
-To eliminate the *Text-Tool Serialization Trap* identified in our pilot experiments, all teacher trajectories are compiled into native Gemma 4 chat-template function-calling tokens:
-```text
-<start_of_turn>model
-<thought>Analyzing call graph: _encode_files delegates to is_file_like in utils.py.</thought>
-<|tool_call|>call:get_code_subgraph{"anchor_symbol": "requests.utils.is_file_like"}<|tool_call|><end_of_turn>
-<start_of_turn>tool
-{"status": "ok", "nodes": ["requests.utils.is_file_like"], "file": "src/requests/utils.py", "line_span": [160, 185]}<end_of_turn>
-<start_of_turn>model
-<thought>Inspecting target predicate in utils.py rather than caller models.py.</thought>
-<|tool_call|>call:read_file{"filepath": "src/requests/utils.py", "start_line": 155, "end_line": 190}<|tool_call|><end_of_turn>
-```
-The cross-entropy loss is computed exclusively on assistant tokens, tool-call JSON arguments, and final unified diffs, masking out environment responses:
+**Evidence rubrics ($R_G$).** For each task, a structured checklist of 3–5 criteria anchored to node identifiers in $G_S$: target symbol invariants, interface and type contracts for caller nodes $N_{\text{in}}(G_S)$, and exception/regression invariants.
+
+### 3.3 The three verifier regimes
+
+1. **Unanchored judge $V_{\text{free}}(x, \hat{y}) \in \{\text{PASS}, \text{FAIL}\}$** — issue description and candidate patch only.
+2. **Rubric judge $V_{\text{graph}}(x, \hat{y}, R_G)$** — PASS iff $\forall c_i \in R_G,\ \hat{y} \models c_i$.
+3. **Execution oracle $V_{\text{exec}}$** — the official `test_patch` under `pytest` in an isolated sandbox; exit code 0 is PASS.
+
+### 3.4 Two-stage post-training
+
+**Stage A (SFT).** Rank-32 LoRA ($r=32$, $\alpha=64$) across the text transformer's linear projections (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`), AdamW, cosine decay, warmup ratio 0.05, effective batch size 8. Learning rate $2 \times 10^{-4}$ for 3 epochs in early runs, reduced to $1 \times 10^{-4}$ for 2 epochs after the campaign showed the higher rate was sufficient to overwrite base instruction-following on a dataset of a few hundred examples.
+
+The intended objective is cross-entropy over assistant tokens only:
 \[
 \mathcal{L}_{\text{SFT}}(\theta) = -\sum_{t \in \mathcal{T}_{\text{assistant}}} \log \pi_\theta(y_t \mid y_{<t}, x)
 \]
-We train for 3 full epochs with effective batch size $B=8$ ($1 \times 8$ gradient accumulation) at learning rate $\eta_{\text{SFT}} = 2 \times 10^{-4}$ with cosine annealing and warmup ratio $0.05$.
+The realisation of $\mathcal{T}_{\text{assistant}}$ is where F1 occurs (§5.1).
 
-#### Stage 4B: Graph-Anchored Rejection Fine-Tuning (Variance Reduction & Path Shortening)
-While SFT imparts the *capability* to navigate cross-file dependencies, greedy single-path inference at inference time retains substantial exploration variance: the model occasionally falls into secondary file reading or quote-escaping bash traps, burning its 10-to-15 tool-call budget.
-
-Stage 4B performs **variance reduction and path shortening** through multi-turn Rejection Fine-Tuning:
-1. **Rollout Generation:** For each held-out task $x_i$, we sample $N = 4$ independent trajectories from the SFT checkpoint under stochastic decoding ($T = 0.7$, $\text{top\_p} = 0.95$):
-   \[
-   \{\tau_{i, 1}, \tau_{i, 2}, \dots, \tau_{i, N}\} \sim \pi_{\text{SFT}}(\cdot \mid x_i)
-   \]
-2. **Contract-Guided Verification:** Each rollout is scored under the GraphForge Evidence Rubric:
-   \[
-   v_{i, j} = V_{\text{graph}}(\tau_{i, j}, R_{G, i}) \in \{0, 1\}
-   \]
-3. **Shortest-Path Selection Curriculum:** Among the passing trajectories, we select the trajectory with the minimum token length:
-   \[
-   \tau^*_i = \operatorname{arg\,min}_{\tau_{i, j} \mid v_{i, j} = 1} |\tau_{i, j}|
-   \]
-   By prioritizing shorter passing trajectories, the curriculum heavily penalizes wandering and reinforces rapid 3-to-4 turn completions (`get_code_subgraph` $\rightarrow$ `read_file` $\rightarrow$ `edit_file` $\rightarrow$ `submit_patch`).
-4. **Gentle Alignment Pass:** We fine-tune the SFT adapter weights on the curated Best-of-$N$ trajectories using a reduced learning rate ($\eta_{\text{RFT}} = 5 \times 10^{-5}$, exactly one-fourth of the SFT rate) for 1–2 epochs. This low learning rate gently reinforces the winning navigation paths without causing catastrophic forgetting of the broad code knowledge acquired during SFT.
+**Stage B (RFT).** For each task, sample $N=4$ trajectories at $T=0.7$ from the SFT checkpoint, score each with $V_{\text{graph}}$, select the shortest passing trajectory $\tau^*_i = \operatorname{arg\,min}_{\tau_{i,j} \mid v_{i,j}=1} |\tau_{i,j}|$, and fine-tune the SFT adapter at $\eta = 5 \times 10^{-5}$. The realisation of the acceptance criterion is where F3 occurs (§5.3).
 
 ---
 
-## 4. Experimental Setup & Anti-Leakage Protocol
+## 4. Experimental Setup
 
-### 4.1 Strict Repository-Level Anti-Leakage Partition
-To guarantee that downstream evaluation tests true out-of-distribution generalization rather than repository memorization, we partition all tasks and code graphs strictly by repository:
+### 4.1 Anti-leakage partition
 
-| Split Role | Target Repositories | Task Count | Purpose |
+| Split | Repositories | Tasks | Role |
 | :--- | :--- | :---: | :--- |
-| **Training & Synthesis ($D_{\text{train}}$)** | `fastapi/fastapi`, `Textualize/rich` | 115 tasks | Source graphs for subgraph sampling, reverse task synthesis, and teacher trajectory collection. |
-| **Out-of-Distribution Validation ($D_{\text{val-ood}}$)** | `psf/requests`, `encode/httpx` | 14 tasks | Completely unseen HTTP client repositories used strictly for holdout evaluation and leaderboard validation. |
+| Training ($D_{\text{train}}$) | `fastapi/fastapi`, `Textualize/rich` | 115 | Subgraph sampling, task synthesis, trajectory collection |
+| OOD holdout ($D_{\text{val-ood}}$) | `psf/requests`, `encode/httpx` | 14 | Held-out evaluation |
 
-### 4.2 Hardware & Offline Environment Specifications
-All experiments, trajectory generation, and training were conducted strictly offline on **4x NVIDIA L4 GPUs (96 GB VRAM total)** using `transformers 5.13.1` and `vLLM` with tensor parallelism ($tp=4$). The evaluation environment enforces strict container sandboxing with zero internet access, mirroring the official Kaggle competition scoring infrastructure.
+Partitioning is strictly by repository, so holdout repositories contribute no graphs, no synthesised tasks, and no trajectories.
+
+### 4.2 Training data composition
+
+The final SFT dataset (`sft_combined.jsonl`) contained **299 trajectories after preprocessing**: 115 grounded trajectories from real maintainer fixes and approximately 184 synthetic teacher trajectories. **Roughly 62% of the training signal was therefore unverified synthetic data** with hallucinated environment observations. This is a material limitation (§9) and we report it wherever a training result is discussed.
+
+### 4.3 Hardware and environment
+
+All training, generation, and evaluation ran offline on 4× NVIDIA L4 (96 GB total) with `transformers 5.13.1` and vLLM at tensor parallelism $tp=4$, in a sandbox with no network access.
+
+### 4.4 Environment facts established before analysis
+
+Several conclusions depend on properties of the serving stack rather than our code. We established these by direct measurement before analysing any failure; the full dump is in Appendix A. The load-bearing facts:
+
+- The chat template emits `<bos>` itself, and `add_special_tokens=True` does **not** add a second one. A double-BOS hypothesis we had held was therefore **false**, and we record it as such.
+- Turn delimiters are `<|turn>` and `<turn|>`; tool calls are delimited `<|tool_call>` … `<tool_call|>` and tool responses `<|tool_response>` … `<tool_response|>`, with `<|"|>` as the string delimiter.
+- **Tool responses are folded inside the preceding model turn rather than emitted as their own turn.** This is central to §5.1.
+- Trajectory token lengths: median 831, p90 1475, p95 1709, p99 2729, maximum 4367.
 
 ---
 
-## 5. Empirical Results & Findings
+## 5. The Failure Taxonomy
 
-### 5.1 Experiment 1: Verifier Alignment & Sycophantic Drift Analysis (Table 1)
-To test Hypothesis $H_1$, we constructed a balanced benchmark of **386 candidate patches** across the 129 competition tasks (129 gold passing fixes $y^+$, 257 subtle contract-omission and sycophantic drift failures $y^-$) and evaluated agreement against deterministic pytest execution ($V_{\text{exec}}$).
+| # | Failure | Mechanism | Observable signature |
+| :--- | :--- | :--- | :--- |
+| **F1** | Stop-token starvation | Masking loop clears the label on the turn-terminating token | Generation runs to `max_output_tokens`; tool calls emitted as prose |
+| **F2** | Silent preamble fallback | `try/except` around the tool-schema render fails open | Training sequences lack tool declarations; no error raised |
+| **F3** | Inter-stage format drift | RFT filter accepts markdown fences, selecting against tool calls | Submission rate falls *between* stages |
+| **F4** | Serialization fragmentation | Four incompatible tool-call encodings in one pipeline | Well-formed calls that nothing parses |
+| **F5** | Unfalsifiable metrics | Audit counts attempts, not resolutions | 85.7% reported where truth is 0.0% |
 
-| Verifier Regime | Precision vs. $V_{\text{exec}}$ | Recall vs. $V_{\text{exec}}$ | F1 Score | False-Positive Drift Rate | Cohen's $\kappa$ |
+A sixth defect, label-direction inversion, is reported in §5.6; it is a data-pipeline error rather than a silent-failure mode, since it is detectable by applying the label.
+
+### 5.1 F1 — Stop-token starvation
+
+**Mechanism.** The intended objective supervises assistant tokens and masks everything else. The implementation walked the token sequence maintaining an `in_assistant_turn` flag:
+
+```python
+in_assistant_turn = False
+for i in range(len(input_ids)):
+    if input_ids[i] == model_turn_id:                           # <|turn>
+        in_assistant_turn = True
+    elif input_ids[i] == turn_end_id and in_assistant_turn:     # <turn|>
+        in_assistant_turn = False
+    if not in_assistant_turn:
+        labels[i] = -100
+```
+
+Two defects. First, `<|turn>` is the generic turn *opener*; the role token follows it. The flag is therefore set at the start of every turn, including user turns, so the supposed assistant-only masking supervises the entire sequence — including environment observations, teaching the model to generate its own tool outputs.
+
+Second, and decisively: when `input_ids[i]` is the turn-terminating token, the flag is cleared *before* the mask check, so `labels[i] = -100` lands on exactly the token that ends the turn. Across three epochs the model received **zero gradient on the decision to stop**.
+
+**Signature.** A policy that cannot terminate a turn does not fail loudly. It generates until `max_output_tokens`, so the harness receives an unterminated blob rather than a parseable call. Downstream this appears as tool calls rendered as conversational prose, exhausted turn budgets, and completion without `submit_patch`. Our campaign logged all three and initially attributed them to a separate cause — the absence of structural token wrapping — which was incorrect.
+
+**Why the loss did not show it.** The stop token is one position in a sequence of hundreds. Masking it changes the loss by a negligible amount. The SFT v1 run converged 2.046 → 0.3935 while training a policy structurally incapable of ending a turn.
+
+**Fix.** Derive spans from the chat template rather than inferring them, and include the terminating token in the supervised span. Our implementation renders each message prefix incrementally and takes the token difference, falling back to a span-marker walk when the template rewrites earlier tokens — which, as §4.4 notes, it does whenever a tool response is folded into a model turn.
+
+**Assertion.**
+```python
+eot_id = tokenizer.convert_tokens_to_ids("<turn|>")
+assert eot_id in [l for l in labels if l != -100], "stop token is not supervised"
+```
+
+### 5.2 F2 — Silent preamble fallback
+
+**Mechanism.** To make training context match evaluation context, training sequences should carry the same system prompt and the same tool declarations the harness sends. Our renderer attempted this:
+
+```python
+try:
+    if tools:
+        return tokenizer.apply_chat_template(msgs, tools=tools, tokenize=False, ...)
+except Exception:
+    pass
+return tokenizer.apply_chat_template(msgs, tokenize=False, ...)   # no tools
+```
+
+The `except Exception: pass` makes the function **fail open**. If the template does not accept a `tools` argument, every training sequence is rendered without tool declarations and nothing reports it.
+
+**Signature, and how we detected it.** The detection is arithmetic rather than instrumented, which is itself the point. The tool schemas measure approximately 1,473 tokens and the system prompt approximately 357, a fixed preamble of roughly 1,830 tokens per example. The measured **median** trajectory length was 831 tokens (§4.4) — below the preamble alone. The preamble was therefore not present, and the fallback had been taken silently on every example.
+
+This also explains an observation that would otherwise be puzzling: at a 2,560-token cap, only **5 of 304** trajectories were dropped. With the preamble present, the p90 of 1,475 would have become roughly 3,300 and the majority would have been dropped.
+
+**Interaction with length policy.** The pipeline used drop-on-overflow rather than truncation, on the correct reasoning that right-truncation silently deletes the `edit_file` and `submit_patch` turns that constitute the label. Drop-on-overflow is safe at a generous budget. Combined with a large fixed preamble and a reduced budget, it becomes a dataset filter that silently reshapes the training distribution toward short trajectories. We did not realise this failure mode — the preamble was absent, so almost nothing was dropped — but we report it because the combination is a live hazard in any pipeline that matches eval-time context and caps sequence length.
+
+**Fix.** Fail closed. Assert the rendered text contains the declarations. Log kept/dropped counts and enforce a floor.
+
+**Assertion.**
+```python
+rendered = render(msgs, tokenizer, tools=TOOLS)
+assert "old_string" in rendered and "node_id" in rendered, "tool schemas missing from training text"
+assert len(kept) >= FLOOR, f"only {len(kept)} trajectories survived preprocessing"
+```
+
+### 5.3 F3 — Inter-stage format drift
+
+**Mechanism.** Stage B samples rollouts, filters them, and fine-tunes on survivors. Patch extraction from a rollout was implemented as:
+
+```python
+m = re.search(r"```(?:diff|patch)?\n([\s\S]*?)```", text)
+```
+
+A rollout qualifies only if it contains a markdown-fenced diff. A rollout that correctly invokes `edit_file` and `submit_patch` produces **no fenced block** and is rejected. The accepted set therefore contained zero tool calls by construction.
+
+Because Stage B runs *after* Stage A and writes to the same adapter, the final policy was fine-tuned on a distribution that systematically excluded the behaviour Stage A existed to teach.
+
+**Signature.** The giveaway is a submission rate that falls *between* stages while both stages' losses look healthy. Holdout submissions fell from 4/14 to 1/14 across the RFT pass.
+
+**Compounding factors.** The filter accepted 4 of 50 tasks, so Stage B trained on 4 examples — approximately 4 optimizer steps at the configured accumulation — with gradient norm falling from 239.7 to 7.29 in 29 seconds. The judge was additionally the policy adapter itself rather than the base model, so the filter was contaminated.
+
+**Fix.** Extract patches from `edit_file` tool-call arguments. Require a minimum accepted count before training. Use the unadapted base model as judge.
+
+**Assertion.**
+```python
+assert all(has_tool_call(t) for t in accepted), "accepted trajectories contain no tool calls"
+assert len(accepted) >= 50, f"only {len(accepted)} accepted; refusing to run RFT"
+```
+
+### 5.4 F4 — Serialization fragmentation
+
+**Mechanism.** Four mutually incompatible tool-call encodings coexisted in one repository:
+
+| Producer | Encoding |
+| :--- | :--- |
+| `teacher_rollouts.py` | `<\|tool_call\|>call:name{args}<\|tool_call\|>` inside `<start_of_turn>model` |
+| `rft_sampler.py` | `<thought>…</thought><tool_call>{"name":…}</tool_call>` |
+| SFT notebook cell | native `tool_calls` dicts, `arguments` as **dict** |
+| `train_qlora.py` | native `tool_calls` dicts, `arguments` as **JSON string** |
+| RFT notebook cell | none — a markdown fence (§5.3) |
+
+At most one can match the serving template. The measured template (§4.4, Appendix A) is:
+
+```
+<|turn>model
+<|tool_call>call:read_file{filepath:<|"|>a.py<|"|>}<tool_call|>
+```
+
+with asymmetric delimiters (`<|tool_call>` opening, `<tool_call|>` closing) and `<|"|>` as the string delimiter. **None of the four hand-written encodings matches it.** Our own methodology section, in an earlier draft of this paper, documented the `<start_of_turn>model` / `<|tool_call|>` form — a format that does not exist in this model. We note this as evidence of how readily such drift propagates from code into prose.
+
+**Fix.** One shared renderer that delegates to the tokenizer's own template; never hand-write the encoding. Import tool schemas from the harness rather than transcribing them. Byte-compare a rendered training prefix against a captured evaluation prompt.
+
+**Assertion.**
+```python
+assert render(msgs, tok)[:300] == captured_eval_prompt[:300], "train/eval prompt divergence"
+```
+
+### 5.5 F5 — Unfalsifiable metrics
+
+**Mechanism.** The audit classified a trace as having submitted a patch via:
+
+```python
+elif args == {} or fn.get("name") == "submit_patch":
+    submitted = True
+```
+
+Any zero-argument tool call — `get_status()` among them — satisfies the first clause. Reported submission rates of 71.4% and 85.7% were inflated by an unknown amount.
+
+More fundamentally, *submission is not resolution*. The audit never applied the diff and never ran a test. A run reporting 6 of 14 submissions and a leaderboard score of 0.00 is entirely consistent: patches were emitted, and none of them worked.
+
+**Consequence.** For most of the campaign, no local measurement could distinguish a good checkpoint from a bad one. Every tuning decision was made against a metric uncorrelated with the objective.
+
+**Fix.** Report applies-cleanly (`git apply --check`) and tests-pass. Never report attempt counts as performance.
+
+**Assertion.**
+```python
+assert "resolved" in audit_columns, "eval does not measure task resolution"
+```
+
+### 5.6 A sixth defect: label-direction inversion
+
+The synthetic task record defines `bug_patch` as *"a unified git diff that introduces the bug into the working code."* The trajectory generator read that field and presented it to the teacher as the answer:
+
+```python
+patch = task.get("bug_patch", "")[:2000]
+...
+f"### Reference Fix Patch:\n{patch}\n\n"
+```
+
+Every synthetic trajectory therefore demonstrated applying the defect. We separate this from F1–F5 because it is **not** a silent failure: applying the label and running the test detects it immediately. It went undetected only because nothing in the pipeline executed anything (§3.2) — which makes it a consequence of F5 rather than an independent failure mode.
+
+The fix was to build trajectories from the 115 real maintainer fixes, and to rename the field so the inversion cannot recur:
+
+```python
+assert "fix" in field_name, "patch field must be the fix direction"
+```
+
+---
+
+## 6. Verifier Alignment Study
+
+This is the one experiment in the campaign that is methodologically independent of the agent failures: it evaluates **static candidate patches**, not agent rollouts, so none of F1–F5 can affect it.
+
+**Setup.** A balanced benchmark of candidate patches across the 129 competition tasks: gold maintainer fixes ($y^+$), truncated contract-omission patches ($y^-$), and sycophantic-drift patches ($y^-$). Each is scored by $V_{\text{free}}$ and $V_{\text{graph}}$ and compared against $V_{\text{exec}}$.
+
+**Pilot results.** *(These numbers come from the pilot benchmark and are reported with the contamination caveat below. They should be regarded as provisional pending the re-run described under Threats.)*
+
+| Verifier regime | Precision | Recall | F1 | FP drift rate | Cohen's $\kappa$ |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Unanchored Judge ($V_{\text{free}}$)** | **0.8660** | 0.6512 | 0.7434 | 0.0506 | 0.6401 |
-| **GraphForge Rubric ($V_{\text{graph}}$)** | 0.8571 | **0.7442** | **0.7967** | 0.0623 | **0.7051** |
-| *Relative $\Delta$ Gain* | *-1.03%* | **+14.28%** | **+7.17%** | *+1.17%* | **+10.15%** |
+| Unanchored ($V_{\text{free}}$) | **0.8660** | 0.6512 | 0.7434 | 0.0506 | 0.6401 |
+| Rubric-anchored ($V_{\text{graph}}$) | 0.8571 | **0.7442** | **0.7967** | 0.0623 | **0.7051** |
+| Relative $\Delta$ | −1.03% | **+14.28%** | **+7.17%** | +1.17% | **+10.15%** |
 
-```
-Verifier Agreement Comparison against Ground-Truth pytest (V_exec)
-──────────────────────────────────────────────────────────────────
-Recall:
-  V_free:   [████████████████░░░░░░░░] 0.6512
-  V_graph:  [███████████████████░░░░░] 0.7442 (+14.28% relative)
+**Interpretation.** The unanchored judge falsely rejects roughly a third of working maintainer fixes (recall 0.6512). Anchoring to explicit structural contracts raises recall to 0.7442 at a precision cost of about one point, and raises $\kappa$ from 0.6401 to 0.7051. The direction of the effect — anchoring trades a little precision for materially better recall and better agreement with execution — is the claim we are willing to defend.
 
-Cohen's Kappa (Inter-Rater Reliability):
-  V_free:   [████████████████░░░░░░░░] 0.6401 (Moderate)
-  V_graph:  [██████████████████░░░░░░] 0.7051 (Substantial Agreement > 0.70)
-```
+**Threats to validity.** Three, stated plainly:
 
-#### Analytical Takeaways & Stratified Negative Analysis:
-1. **Elimination of False Rejection:** The unanchored judge ($V_{\text{free}}$) suffered from severe skepticism on legitimate, complex diffs, falsely rejecting more than a third of working gold fixes (Recall = 0.6512). By anchoring evaluation to explicit contract criteria, $V_{\text{graph}}$ increased recall to **0.7442** (+9.3 percentage points / +14.28% relative).
-2. **Substantial Inter-Rater Reliability:** $V_{\text{graph}}$ raised Cohen's $\kappa$ from 0.6401 to **0.7051**, crossing the formal psychometric threshold into "substantial agreement" ($>0.70$) with deterministic test execution.
-3. **Stratification by Negative Class & Judge Independence:** In our initial pilot benchmark, the `sycophantic_drift` negative class used a constant 3-line template across tasks, making a third of the negative pool trivially separable. In `src/candidate_patch_generator.py` and Data Preparation Cell 4/5, we upgrade the negative suite to construct *task-specific* sycophantic drift patches targeting the actual file and hunk lines of each task, and evaluate verifiers using the uncontaminated **base** Gemma 4 31B model (rather than the fine-tuned `main_lora` adapter) with false-positive rates reported separately for `partial_contract_omission` and `sycophantic_drift`.
+1. **Contaminated negative class.** In the pilot, the `sycophantic_drift` negatives used a single constant three-line string identical across all tasks, making approximately one third of the negative pool trivially separable and inflating both verifiers' scores. `src/candidate_patch_generator.py` now constructs task-specific drift patches targeting each task's actual file and hunk. **The table above predates that change.**
+2. **Judge contamination.** The pilot queried the served adapter. The corrected configuration queries the unadapted base model.
+3. **Synthetic negatives.** Negatives are constructed, not harvested from real failed rollouts, and may be easier than naturally occurring wrong patches.
+
+A re-run addressing (1) and (2), with false-positive rates reported separately for `partial_contract_omission` and `sycophantic_drift`, is required before this result should be cited. **If the corrected gain is smaller, the smaller number is the result.**
 
 ---
 
-### 5.2 Experiment 2: Best-of-$N$ Rejection Fine-Tuning Filter Yield & Failure Analysis
-In our Stage 4B pilot, we sampled 200 multi-turn candidate rollouts ($N=4$ across 50 synthetic tasks). Each rollout was evaluated under $V_{\text{free}}$, $V_{\text{graph}}$, and structural execution checks:
+## 7. Aggregate Evidence
 
-| Verifier Filter Condition | Accepted Tasks ($N=4$) | Task Acceptance Rate (%) | Structural Diff Validity |
-| :--- | :---: | :---: | :---: |
-| **Condition A: Unanchored Judge ($V_{\text{free}}$)** | 2 / 50 | 4.0% | 100% |
-| **Condition B: GraphForge Rubric ($V_{\text{graph}}$)** | **4 / 50** | **8.0%** | **100%** |
-| **Condition C: Hybrid Filter ($V_{\text{graph}} + \text{Tool Check}$)** | **4 / 50** | **8.0%** | **100%** |
+### 7.1 Checkpoint progression
 
-#### Critical Post-Training Ablation: Why Pilot RFT Regressed Tool Calling (And How We Fixed It)
-While $V_{\text{graph}}$ doubled the acceptance yield over $V_{\text{free}}$ (8.0% vs. 4.0%), our post-mortem audit (`DIAGNOSIS.md`) uncovered three critical pitfalls when applying RFT to tool-using coding agents:
-1. **The Markdown-Fence Extraction Trap:** Extracting patches via regex (` ```diff `) during RFT filtering selects *against* native `edit_file` tool invocations, training the model to answer in conversational prose (which reduced holdout patch submissions from 4/14 to 1/14). Our corrected `src/rft_sampler.py` extracts diffs directly from `edit_file(filepath, old_string, new_string)` tool arguments.
-2. **Minimum Sample Floor ($\ge 50$ Trajectories):** Fine-tuning a rank-32 LoRA adapter on only 4 accepted trajectories overwrites SFT capabilities with high-variance noise. `src/train_rft.py` now enforces a hard floor of $\ge 50$ accepted tool-calling trajectories before executing the RFT pass.
-3. **Uncontaminated Base Judge:** RFT filtering must query the unadapted **base** model as judge (`gemma-4-31b-it-qat-w4a16-ct`), never the policy adapter (`main_lora`) grading its own rollouts.
-
----
-
-### 5.3 Experiment 3: Out-of-Distribution Agent Benchmark & Post-Training Ablation (Table 2)
-We evaluated the progression of agent capabilities across our fine-tuning stages on the strict out-of-distribution holdout benchmark ($D_{\text{val-ood}}$: 14 unseen tasks across `psf/requests` and `encode/httpx`) as well as the official blind **Kaggle Public Leaderboard**.
-
-*(Methodological Note on Audit Metrics: Early diagnostic scripts counted any zero-argument tool call `args == {}`—such as `get_status()`—as a patch submission, inflating apparent submission rates to 71.4%–85.7%. Table 2 below reports both the legacy trace count and the strict `name == "submit_patch"` non-empty diff rate, alongside deterministic `pytest` resolution.)*
-
-| Model Policy Variant | Public Leaderboard | Strict Non-Empty Patch Submitted | Pytest Resolved (`exit_code=0`) | Target File Localized (%) | Primary Failure Mode / Ablation Finding |
+| Policy variant | Leaderboard | Strict non-empty patch | Pytest resolved | Target file localized | Dominant failure |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **1. Zero-Shot Gemma 4 12B Base** | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 14.3% (2/14) | Blind grep / timeout |
-| **2. Zero-Shot Gemma 4 31B Base** | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 21.4% (3/14) | Trial-and-error shell searching |
-| **3. Gemma 4 31B + SFT v1 (Unmasked EOT Bug)** | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 71.4% (10/14) | Masked `<turn\|>` stop token + stringified tool args |
-| **4. Gemma 4 31B + Pilot SFT+RFT (Run 1)** | **0.03** | **10/14** *(legacy audit)* | **7.1%** (1/14: `requests_6644`) | **92.9%** (13/14) | `MAX_LEN=1536` truncation & offline `httpbin` socket |
-| **5. Gemma 4 31B + Scaled SFT (Run 2, No RFT)** | **0.01** | **28.6%** (4/14 valid diffs) | **7.1%** (1/14: `requests_6644`) | 85.7% (12/14) | Unmasked `<\|turn>user` header -> conversational timeouts |
-| **6. Gemma 4 31B + Unmasked 4-Sample RFT (Run 3)** | — | 7.1% (1/14: `requests_6589`) | 0.0% (0/14) | — | RFT regex selected markdown fences over tool calls |
-| **7. Gemma 4 31B + Grounded SFT (`chat_format.py`)** | *[Phase 4 Eval]* | *[3-Arm Eval A/B/C]* | *[3-Arm Eval A/B/C]* | *[Target >90%]* | Fixes B1–B5, A1–A3, C1–C5 (`MAX_LEN=8192`, EOT unmasked) |
+| 1. Zero-shot 12B | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 14.3% (2/14) | Blind `grep`, timeout |
+| 2. Zero-shot 31B | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 21.4% (3/14) | Trial-and-error search |
+| 3. SFT v1 | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 71.4% (10/14) | **F1** (stop token) |
+| 4. Pilot SFT+RFT | 0.03 | 10/14 *(legacy audit)* | 7.1% (1/14) | 92.9% (13/14) | **F5**; truncation |
+| 5. Scaled SFT, no RFT | 0.01 | 28.6% (4/14) | 7.1% (1/14) | 85.7% (12/14) | **F1** residual |
+| 6. 4-sample RFT | — | 7.1% (1/14) | 0.0% (0/14) | — | **F3** (fence drift) |
+| 7. Grounded SFT | 0.00 | 42.9% (6/14) | 0.0% (0/14) | — | **F2**/**F4** suspected |
 
+**Localization rose from 14.3% to over 85% while resolution never exceeded 1 of 14.** The campaign consistently taught the model *where* the bug was and consistently failed to let it act on that.
+
+**On the 0.03 vs 0.01 comparison.** An earlier draft of this paper read the difference between rows 4 and 5 as evidence that rejection fine-tuning is indispensable, describing it as a "3× gain" and "definitive blind empirical proof". We retract that. On approximately 60 hidden tasks, 0.03 versus 0.01 is a difference of roughly one or two resolved tasks — well within noise, with no confidence interval and no repeated runs. Rows 6 and 7 subsequently scored 0.00 with RFT variants in the pipeline, which contradicts the claimed direction outright. **No conclusion about RFT's value should be drawn from this table.**
+
+### 7.2 The central observation: loss convergence against resolution
+
+Every run in the campaign converged. The SFT v1 run fell 2.046 → 0.3935. The SFT v2 run fell 2.877 → 0.9554 in under 20 minutes. The RFT pass fell 1.79 → 1.083 with gradient norm stabilising 239.7 → 7.29.
+
+Resolution across those same checkpoints: 0/14, 0/14, 0/14, 1/14, 1/14, 0/14, 0/14.
+
+Plotted together — loss on one axis, resolution on the other — these form the paper's central figure, and the argument of §8 in a single image. Loss convergence carried **no information** about whether the policy could terminate a turn (F1), whether it had ever seen the tool declarations it would receive (F2), whether the final stage had erased the behaviour of the first (F3), whether its output format matched the parser (F4), or whether the metric being optimised measured anything (F5).
+
+### 7.3 Qualitative case studies
+
+These are **single observations**, reported as existence proofs that the underlying capability was present and unreliable, not as performance claims.
+
+**`requests_7505`.** The agent localised a proxy-stream defect via the subgraph, modified `src/requests/models.py` at the `RequestEncodingMixin` and `PreparedRequest` sites, and introduced `hasattr(data, "read")` alongside `isinstance(data, _SupportsRead)` — a duck-typing-correct fix matching maintainer intent. Completed in 53 seconds using 8 of 15 tool calls.
+
+**`requests_6644`.** Resolved under `pytest` in 18.9 seconds with 3 tool calls.
+
+**`requests_7502`.** Symptom in `models.py`, implementation in `utils.py`. The agent exhausted its budget paging the caller file. This is the cross-file indirection case that motivated 2-hop semantic expansion; we record it as a qualitative observation only, since with resolution near zero we cannot show that the expansion helps.
+
+That `requests_7505` and `requests_6644` happened at all establishes that capability was induced. That they did not generalise is what F1–F5 explain.
+
+---
+
+## 8. Structural Gates for Agentic Post-Training
+
+The generalisable claim: **agentic post-training pipelines require assertions on structure, because the loss observes none of it.** We propose the following gates, each derived from a failure above and each cheap enough to run before every training job.
+
+**Gate 1 — Label coverage.** Decode the supervised tokens and read them.
+```python
+unmasked = [i for i, l in zip(input_ids, labels) if l != -100]
+frac = len(unmasked) / len(input_ids)
+assert 0.03 < frac < 0.45, f"supervised fraction {frac:.1%} out of range"
+print(tokenizer.decode(unmasked, skip_special_tokens=False))
 ```
-Official Kaggle Leaderboard Score Comparison:
-──────────────────────────────────────────────────────────────────
-1. Zero-Shot Base:            [░░░░░░░░░░░░░░░░░░░░] 0.00 (Timeout / NO_PATCH)
-2. Scaled SFT Only (No RFT):  [██░░░░░░░░░░░░░░░░░░] 0.01 (Wandering / budget exhausted)
-3. RepoGraphForge (SFT + RFT):[██████░░░░░░░░░░░░░░] 0.03 (3x gain via RFT variance reduction!)
+The printed text must be assistant turns and nothing else. This single check catches F1 and the observation-leakage half of the masking bug. In our campaign it would have saved four training runs.
+
+**Gate 2 — Stop-token supervision.**
+```python
+assert eot_id in [l for l in labels if l != -100], "stop token unsupervised"
 ```
 
-#### Analytical Breakdown: SFT Induces Capability, RFT Enforces Execution
-The drop from **0.03 to 0.01** when evaluating the Scaled SFT model *without* Rejection Fine-Tuning provides definitive blind empirical proof for our core thesis ($RQ_3, H_3$):
-1. **SFT expands semantic competence:** The Scaled SFT checkpoint increased target file localization to 85.7% and generated valid diffs for 12/14 tasks.
-2. **Without RFT, exploration variance kills task completion:** Under single-path greedy decoding on unseen private repositories, unaligned SFT models frequently second-guess themselves, inspect secondary files, or burn tool turns before calling `submit_patch`.
-3. **RFT with $V_{\text{graph}}$ is indispensable:** By filtering candidate rollouts against structural evidence rubrics and selecting the *shortest passing trajectory*, RFT explicitly eliminates exploratory drift, producing a **$3\times$ higher resolution score on the blind competition leaderboard**.
+**Gate 3 — No observation leakage.**
+```python
+for marker in ("File: ", '"status": "ok"', "<|tool_response>"):
+    assert marker not in tokenizer.decode(unmasked), f"observation leaked: {marker}"
+```
 
-#### Analytical Breakdown: The File-Reading Quicksand Law
-A granular breakdown across all 14 evaluated ATIF-v1.7 trajectories reveals a strict mathematical correlation between the agent's file-reading behavior, context token bloat, and task completion:
+**Gate 4 — Train/eval prompt identity.** Render a training example, capture a real evaluation prompt, and byte-compare the prefix. Fail closed: a renderer that falls back silently when tool declarations cannot be attached will hide F2 indefinitely.
 
-| Agent Reading Behavior | Evaluated Tasks | Avg. Tool Calls | Avg. Total Tokens | Submission Rate |
-| :--- | :--- | :---: | :---: | :---: |
-| **Graph-First Single Read (`Files Read = 1`)** | `requests_6589`, `6592`, `7205`, `7309`, `7427`, `7433` | **7.5** | **54,424** | **100.0% (6 / 6)** |
-| **Moderate Inspection (`Files Read = 2–3`)** | `requests_6644`, `7328`, `7505` | **13.0** | **108,000** | **66.7% (2 / 3)** |
-| **Sequential Paging Quicksand (`Files Read ≥ 4`)** | `httpx_3672`, `requests_6757`, `7315`, `7502` | **15.0** *(hit limit)* | **114,874** | **50.0% (2 / 4)** |
+**Gate 5 — Dataset survival.** Log kept and dropped counts; assert a floor; assert a minimum optimizer-step count. A pipeline that trains on 4 examples for 4 steps should refuse to start.
 
-This empirical divergence provides quantitative proof for Advantage 1 of RepoGraphForge: **when the agent relies on the code graph and reads only the targeted functional span, it completes tasks in an average of 7.5 tool calls and 54k tokens with a 100% submission rate**. When the agent devolves into reading 4 or more files sequentially, token usage surges beyond 114k tokens and tool call exhaustion spikes to 50%. This directly motivates the scaled multi-hop trajectory dataset.
+**Gate 6 — Inter-stage format identity.** Any stage that consumes the previous stage's outputs must accept the format the previous stage produced. Assert that accepted trajectories contain at least one structured tool call before training on them.
 
----
+**Gate 7 — Falsifiable evaluation.** Report applies-cleanly and tests-pass. Never report attempt counts as performance. Without this gate, none of the others can be prioritised, because no measurement distinguishes a fix from a regression.
 
-### 5.4 Experiment 4: Model Scale, Edge Hardware & System Profiling (Table 3)
-To address $RQ_4$ and evaluate deployment feasibility across everyday developer hardware, we profile inference throughput, peak VRAM footprints, and token context consumption across the four officially supported Gemma 4 model sizes:
-
-| Model Architecture | Target Hardware Tier | Min. Hardware Spec | Peak VRAM | Generation Throughput | Context Compression vs. Raw Paging |
-| :--- | :--- | :--- | :---: | :---: | :---: |
-| **Gemma 4 E2B** | Ultra-Light Edge / Laptop | 8 GB Unified RAM | **~3.2 GB** | **~85 tok/s** | -94.2% |
-| **Gemma 4 E4B** | Consumer Laptop / Desktop | 16 GB RAM / 8 GB VRAM | **~6.1 GB** | **~65 tok/s** | -93.8% |
-| **Gemma 4 12B** | Workstation GPU | Single GPU (16 GB RTX) | **~13.8 GB** | **~42 tok/s** | -92.5% |
-| **Gemma 4 31B** | Multi-GPU Server Cluster | 4x NVIDIA L4 (96 GB VRAM) | **~46.5 GB** | **~18 tok/s** | -91.1% |
-
-#### Key System Findings:
-1. **Edge Hardware Viability:** Both Gemma 4 E2B and E4B execute fully within consumer hardware envelopes ($\le 8$ GB VRAM). By replacing multi-thousand-token full-file dumps with compact $\sim 120$-token code subgraphs, RepoGraphForge prevents context blowout even on constrained memory devices.
-2. **Throughput Scaling:** Gemma 4 12B delivers more than $2.3\times$ the generation speed of 31B (~42 tok/s vs. ~18 tok/s), enabling an agent to execute 8 tool turns in under 35 seconds.
-3. **The Efficiency Hypothesis ($H_4$):** Fine-tuning lightweight variants (12B and E4B) on graph trajectories bridges the reasoning gap with unadapted flagship models, producing higher resolution rates than zero-shot 31B while operating at a fraction of the compute and memory budget.
+We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4 and 6 of *format identity across boundaries*, and Gates 5 and 7 of *measurement*. None is expensive. All are absent from standard fine-tuning recipes.
 
 ---
 
-## 6. Qualitative Analysis: Diagnostic Case Studies
+## 9. Limitations
 
-### 6.1 The 53-Second Autonomous Fix (`requests_7505`)
-On holdout task `requests_7505` in `psf/requests`, the agent was tasked with handling stream proxy objects that implement `.read()` but fail `isinstance(data, _SupportsRead)`.
-
-Under the RepoGraphForge final policy equipped with the Anti-Hesitation Action Gate:
-- **Turn 1 (`get_code_subgraph`):** Queried `PreparedRequest.body`, identifying `src/requests/models.py`.
-- **Turn 2 (`read_file`):** Read target lines in `models.py`.
-- **Turn 3 (`edit_file`):** Applied surgical modifications to lines 164 and 644, introducing `hasattr(data, "read")` alongside `isinstance(data, _SupportsRead)`.
-- **Turn 4 (`submit_patch`):** Submitted a clean unified git diff in **53 seconds flat**, using only 8 of 15 tool calls.
-
-### 6.2 The Cross-File Indirection Barrier (`requests_7502`)
-Conversely, `requests_7502` exposed the boundary between single-file and multi-file defects:
-- **The Defect:** In `requests.models.RequestEncodingMixin._encode_files`, file-like detection relied on `is_file_like`.
-- **The Barrier:** While `_encode_files` is defined in `models.py`, `is_file_like` is implemented in `src/requests/utils.py`.
-- **Observed Behavior:** The agent inspected `models.py` (1,185 lines) and began reading 50-line chunks sequentially. It exhausted its tool-call budget searching inside the caller file without realizing that the target predicate was imported from `utils.py`.
-- **Theoretical Insight for Scaling:** 1-hop subgraphs provide sufficient context for caller-site fixes, but resolving cross-file indirection strictly requires **multi-hop 2-hop traversals** that pull callee function bodies into the agent's observation window.
+1. **No end-task claim.** Resolution never exceeded 1 of 14 held-out tasks. We cannot say whether code-graph anchoring improves agent performance; the experiment that would answer it has not been run successfully.
+2. **F1 is observational.** Our evidence is the checkpoint progression in §7.1, in which runs differ in more than one respect. A controlled ablation — two adapters identical but for stop-token masking, reporting ceiling-hit rate and submission rate — is the primary planned experiment and **was not run**.
+3. **Training data quality.** Approximately 62% of the SFT set was unverified synthetic trajectories with hallucinated observations (§4.2).
+4. **Synthetic observations in grounded data.** Even the grounded trajectories use constructed observation strings rather than captured tool output (§3.2).
+5. **Verifier study caveats.** Three threats stated in §6; the headline numbers predate two of the three corrections.
+6. **Single model family, single task family.** One model, two training repositories, two holdout repositories. We expect the failure *modes* to generalise, since they concern pipeline structure rather than model specifics, but we have not shown this.
+7. **No hardware profiling.** An earlier draft reported a multi-scale VRAM and throughput table across Gemma 4 E2B, E4B, 12B, and 31B. Those measurements were never taken and the table has been removed.
+8. **Small holdout.** 14 tasks; leaderboard ~60 hidden tasks. Single-task differences move the reported rate by 7 percentage points.
 
 ---
 
-## 7. Discussion, Limitations & Reproducibility
+## 10. Future Work
 
-### 7.1 When Graph Rubrics Suffice vs. When Sandboxes are Indispensable
-Our findings demonstrate that GraphForge structural rubrics ($V_{\text{graph}}$) are highly effective at evaluating **structural contracts, type invariants, and interface preservation**. However, graph rubrics cannot fully replace dynamic execution ($V_{\text{exec}}$) when defects involve:
-- Complex state transitions over time (e.g., streaming socket timeouts).
-- Concurrency and race conditions.
-- External POSIX shell environment configurations.
-Hence, the optimal regime for developer agents is a **Hybrid Cascade**: $V_{\text{graph}}$ acts as a fast, offline filter during rollout sampling, reserving containerized $V_{\text{exec}}$ execution for final candidate validation.
+**Immediate.** Run the F1 ablation (Limitation 2). Re-run the verifier study with task-specific negatives and an uncontaminated base-model judge (§6). Both are small and both convert an observational claim into a controlled one.
 
-### 7.2 Open-Source Artifacts & Verifiability
-To ensure complete reproducibility in accordance with Kaggle Paper Track standards:
-- Our entire synthetic task dataset (350 reverse-mutated bug tasks), 1,139 sampled subgraphs, and 113 verified teacher trajectories are released under Apache 2.0.
-- All post-training scripts (`train_qlora.py`, `train_rft.py`) run entirely offline using open-weights Gemma 4 models without proprietary third-party dependencies.
+**Pipeline.** Collect execution-verified trajectories: run the agent against the live sandbox and retain a rollout only if `submit_patch` fired, the diff applied, and the reproduction test flipped red to green. This replaces the unverified synthetic majority of the training set and is the single highest-value remaining change.
+
+**Open question.** Whether code-graph anchoring improves end-task performance remains open. The present work establishes only that the question cannot be answered by a pipeline exhibiting F1–F5 — and that a converging loss curve is not evidence that it does not.
 
 ---
 
-## 8. Conclusion
+## 11. Conclusion
 
-We presented **RepoGraphForge**, adapting code-graph trajectory synthesis and evidence-anchored rubrics to post-train lightweight developer agents on open Gemma 4 models. By grounding LLM evaluators in AST caller/callee contracts, RepoGraphForge boosts valid patch recall by +14.28% relative, doubles RFT rollout yield (8.0% vs. 4.0%), and eliminates analysis paralysis through the Anti-Hesitation Action Gate. These results establish that parameter-efficient fine-tuning on graph-structured trajectories enables open-weights models to resolve real software engineering tasks completely offline on everyday developer hardware.
+We set out to build a graph-anchored offline coding agent and did not. What we obtained instead is a detailed account of five ways an agentic post-training pipeline can fail while reporting success: a stop token that receives no gradient, a context-alignment path that fails open, a final stage that erases the first, four serialization formats where one was needed, and a metric that counts attempts rather than outcomes.
+
+The through-line is that none of these is visible in the training loss. A cross-entropy scalar cannot report which tokens were supervised, whether the policy was taught to stop, what the preprocessing kept, or whether the number being optimised means anything. The remedy is not a better loss but **structural assertions** — on label coverage, stop-token supervision, train/eval format identity, dataset survival, and falsifiable evaluation — run before every training job.
+
+We report a negative result with identified mechanisms in preference to a positive result we cannot support. The verifier-alignment study in §6 stands within its caveats. The agent does not work, and we say so.
 
 ---
 
 ## References
 
-1. **GraphForge:** *GraphForge: Graph-Guided Post-Training for Enterprise Knowledge Workers*. arXiv:2609.38923, 2026.
-2. **SWE-bench:** Jimenez, C. E., et al. *SWE-bench: Can Language Models Resolve Real-World GitHub Issues?* ICLR, 2024.
-3. **Gemma 4:** Google DeepMind. *Gemma 4: Open Models for Autonomous Software Engineering*. Google Research Technical Report, 2026.
-4. **LoRA:** Hu, E. J., et al. *LoRA: Low-Rank Adaptation of Large Language Models*. ICLR, 2022.
-5. **Rejection Fine-Tuning:** Yuan, Z., et al. *Scaling Relationship on Learning Mathematical Reasoning with Large Language Models*. arXiv:2308.01825, 2023.
+*(To be completed — GraphForge `arXiv:2609.38923`, SWE-bench, LoRA, rejection sampling / STaR, LLM-as-a-judge reliability.)*
+
+---
+
+## Appendix A: Measured Chat Template and Environment Facts
+
+Established by direct measurement before failure analysis.
+
+**Rendered template** for a system / user / assistant-with-tool-call / tool / assistant sequence:
+
+```
+<bos><|turn>system
+SYS<turn|>
+<|turn>user
+USR<turn|>
+<|turn>model
+<|tool_call>call:read_file{filepath:<|"|>a.py<|"|>}<tool_call|><|tool_response>response:read_file{value:<|"|>OBS<|"|>}<tool_response|>THINK<turn|>
+DONE<turn|>
+```
+
+**Observations.**
+
+1. **Tool responses are folded inside the model turn**, not emitted as a separate turn. Any masking scheme that assumes one role per turn block will mis-handle this.
+2. **Assistant content is emitted after the tool-call and tool-response blocks** within the same turn (`THINK` follows both).
+3. **The final assistant message carries no turn-open header** — `DONE` appears directly after the preceding `<turn|>`. Masking logic keyed on turn-open markers must account for this.
+4. **`<bos>` is emitted by the template**, and `add_special_tokens=True` does not duplicate it. A double-BOS hypothesis we had held is **false**.
+
+**Special tokens.** `<bos>`, `<eos>`, `<unk>`, `<pad>`, `<mask>`, `<|turn>`, `<turn|>`, `<|tool_call>`, `<tool_call|>`, `<|tool_response>`, `<tool_response|>`, `<|tool>`, `<tool|>`, `<|"|>`, `<|think|>`, `<|channel>`, `<channel|>`, and image/audio/video markers.
+
+**Trajectory token lengths** (n = 304): median 831, p90 1475, p95 1709, p99 2729, max 4367. At the historical 1,536-token cap, 24 of 304 (7.9%) were truncated. At 8,192, none overflow.
+
+This distribution is what establishes F2 arithmetically: a median of 831 tokens is incompatible with a ~1,830-token preamble being present.
