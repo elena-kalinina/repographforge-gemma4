@@ -47,7 +47,7 @@ the training set supplied one. Silent failures queue; repairing one exposes the 
 ## The contribution: structural gates
 
 The generalisable claim is that agentic post-training needs assertions on *structure*,
-because the loss observes none of it. Eight gates are stated in §8 of the paper. Two are
+because the loss observes none of it. Nine gates are stated in §8 of the paper. Two are
 implemented here as runnable, GPU-free tests:
 
 ```bash
@@ -64,10 +64,15 @@ Both run offline in under a second. No GPU, no model weights, no Kaggle session.
   refuses to start training on a missing, stale, or mismatched tool-schema verification —
   including that an operator acknowledgement cannot override a real mismatch.
 
-The gate itself lives in [`src/chat_format.py`](src/chat_format.py):
-`assert_tool_schema_verified()` reads a receipt carrying the formatter version, a hash of
-the declared schemas, and the verification outcome. `train_sft.py` calls it before the
-model loads, so there is no path to training that bypasses it.
+Both gates live in [`src/chat_format.py`](src/chat_format.py) and are called by
+`train_sft.py` before the model loads, so there is no path to training that bypasses them:
+
+- `assert_tool_schema_verified()` (Gate 8) reads a receipt carrying the formatter version,
+  a hash of the declared schemas, and the verification outcome.
+- `assert_trajectories_conform()` (Gate 9) checks that the calls the **data demonstrates**
+  use only parameters the **declarations** contain. These drifted independently in our
+  campaign: the schema check went green while every trajectory still demonstrated a call
+  the harness rejects.
 
 ---
 

@@ -25,7 +25,7 @@ We undertook exactly this. Over five post-training runs on Gemma 4 31B — super
 
 The central observation of this paper is that **the loss curve was never going to reveal why.** A cross-entropy loss over a token sequence is a scalar summary. It cannot report which tokens carried gradient, what fraction of the sequence was supervised, whether the token that terminates a turn appeared in the labels at all, whether the tool declarations the evaluation harness sends were present during training, whether those declarations matched the interface the harness actually exposes, or how many training examples survived preprocessing. Each of those was wrong at some point in our campaign, and each was wrong *silently*: the pipeline logged success, the loss fell, and the agent did not work.
 
-This paper is the post-mortem. We present six failures as a taxonomy (§5), each with mechanism, signature, fix, and a runnable assertion that would have caught it. We report the one experiment that survives the campaign as a positive result — a verifier-alignment study (§6) that is methodologically independent of the agent failures because it evaluates static patches rather than agent rollouts. We then generalise the taxonomy into a set of structural gates for agentic post-training (§8), which we regard as the paper's practical contribution.
+This paper is the post-mortem. We present six failures as a taxonomy (§5), each with mechanism, signature, fix, and a runnable assertion that would have caught it. We report the one experiment that survives the campaign as a positive result — a verifier-alignment study (§6) that is methodologically independent of the agent failures because it evaluates static patches rather than agent rollouts. We then generalise the taxonomy into nine structural gates for agentic post-training (§8), which we regard as the paper's practical contribution.
 
 ### 1.1 What this paper does and does not claim
 
@@ -40,7 +40,7 @@ We are explicit about the boundary, because the original framing of this work cl
 1. **A taxonomy of six silent failures in agentic post-training** (§5), each with mechanism, observable signature, corrective fix, and a runnable assertion.
 2. **An environment-grounded account of tool-call serialization drift** (§5.4, Appendix A), including a dump of the real Gemma 4 chat template that contradicts the format our own earlier methodology section documented.
 3. **A verifier-alignment study** (§6) comparing unanchored and rubric-anchored LLM judges against deterministic test execution, reported with its contamination caveats stated.
-4. **A set of structural gates for agentic post-training pipelines** (§8), stated as assertions a practitioner can paste into their own trainer.
+4. **Nine structural gates for agentic post-training pipelines** (§8), stated as assertions a practitioner can paste into their own trainer, including one — Gate 9 — that exists only because passing Gate 8 misled us.
 5. **A released diagnostic harness** (`src/chat_format.py` and the verification gate) implementing those assertions.
 
 ---
@@ -480,7 +480,21 @@ for name in declared:
 ```
 This is the only gate whose ground truth lies *outside* the training pipeline, which is precisely why no amount of internal consistency checking can substitute for it. Our implementation records the comparison as a signed receipt — the chat-format version, a hash of the declared schemas, and the outcome — and the trainer refuses to start without a current, clean one. Making the verification a durable artefact rather than a console message is what prevents it from being skipped under deadline.
 
-We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4, 6 and 8 of *format identity across boundaries*, and Gates 5 and 7 of *measurement*. None is expensive. All are absent from standard fine-tuning recipes.
+**Gate 9 — Demonstrations must match declarations.** Gate 8 verifies the schemas shown to the model. It says nothing about the calls the training data demonstrates, and in our campaign the two were wrong independently: five of nine declarations diverged from the harness, and separately every trajectory ended with a `submit_patch` call carrying an argument that no version of the interface defines. Repairing the declarations alone yields a model trained to contradict them.
+
+```python
+declared = {t["function"]["name"]: set(t["function"]["parameters"]["properties"])
+            for t in TOOLS}
+for rec in records:
+    for call in tool_calls(rec):
+        assert call.name in declared, f"undeclared tool {call.name}"
+        assert set(call.arguments) <= declared[call.name], \
+            f"{call.name} sends undeclared {sorted(set(call.arguments) - declared[call.name])}"
+```
+
+The gap this closes is instructive and we suspect it is common. Having verified our tool schemas against the harness, we read the green result as meaning the interface problem was solved — while the dataset still demonstrated the rejected call on every example. A verification is only ever about the artefact it inspected, and the natural reading of a passing check is broader than what it actually covered. Writing the two gates separately is what makes the boundary visible.
+
+We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4, 6, 8 and 9 of *format identity across boundaries*, and Gates 5 and 7 of *measurement*. None is expensive. All are absent from standard fine-tuning recipes.
 
 ---
 
@@ -512,7 +526,7 @@ We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4, 6 and
 
 We set out to build a graph-anchored offline coding agent and did not. What we obtained instead is a detailed account of six ways an agentic post-training pipeline can fail while reporting success: a stop token that receives no gradient, a context-alignment path that fails open, a final stage that erases the first, four serialization formats where one was needed, a metric that counts attempts rather than outcomes, and a tool interface hand-copied from the harness that had quietly drifted from it.
 
-The through-line is that none of these is visible in the training loss. A cross-entropy scalar cannot report which tokens were supervised, whether the policy was taught to stop, what the preprocessing kept, or whether the number being optimised means anything. The remedy is not a better loss but **structural assertions** — on label coverage, stop-token supervision, train/eval format identity, dataset survival, falsifiable evaluation, and interface identity against the harness — run before every training job.
+The through-line is that none of these is visible in the training loss. A cross-entropy scalar cannot report which tokens were supervised, whether the policy was taught to stop, what the preprocessing kept, or whether the number being optimised means anything. The remedy is not a better loss but **structural assertions** — on label coverage, stop-token supervision, train/eval format identity, dataset survival, falsifiable evaluation, interface identity against the harness, and agreement between what the data demonstrates and what the declarations promise — run before every training job.
 
 One further lesson is methodological. The defects did not present themselves at once; they queued. F6 was invisible while F2 was live, because declarations cannot be wrong while they are absent. We would therefore caution against reading any single repair as a fix: in a pipeline with several silent failures, the expected outcome of correcting one is that the next becomes observable.
 
