@@ -213,7 +213,7 @@ logger = logging.getLogger("chat_format")
 # Bump on every change. The Kaggle notebook carries its own `%%writefile` copy of this
 # file, so the two can drift; Cell 4B compares this string and refuses to proceed on a
 # mismatch. A stale copy silently reinstates F1 and F2, which is how four runs were lost.
-CHAT_FORMAT_VERSION = "2026-11-10.stage1c"
+CHAT_FORMAT_VERSION = "2026-11-10.stage1d"
 
 # --- F2 (silent preamble fallback) guards -------------------------------------------
 # Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
@@ -600,17 +600,41 @@ _FALLBACK_COMPETITION_TOOLS: List[Dict[str, Any]] = [
 REAL_TOOLS_PATH = Path("/kaggle/working/real_tools.json")
 TOOLS_SOURCE = "fallback (hand-written, verified against Phase 0.2 signatures)"
 
+# A derived artefact needs its own version gate, for the same reason this module has one.
+# The first Cell 0F inferred JSON types by substring-matching the annotation; "list[str]"
+# contains "str", so it typed the list-valued `nodes` parameter as a string — F6 reborn
+# inside the fix for F6. Any real_tools.json written before this stamp is refused.
+REQUIRED_REAL_TOOLS_GENERATOR = "2026-11-10.0F-v2"
+
 
 def _load_competition_tools() -> List[Dict[str, Any]]:
     global TOOLS_SOURCE
     try:
-        if REAL_TOOLS_PATH.exists():
-            data = json.loads(REAL_TOOLS_PATH.read_text(encoding="utf-8"))
-            if isinstance(data, list) and data and all(isinstance(d, dict) for d in data):
-                TOOLS_SOURCE = str(REAL_TOOLS_PATH)
-                logger.info("✓ Tool schemas derived from the harness: %s", REAL_TOOLS_PATH)
-                return data
-            logger.warning("%s present but malformed; using fallback schemas.", REAL_TOOLS_PATH)
+        if not REAL_TOOLS_PATH.exists():
+            return _FALLBACK_COMPETITION_TOOLS
+        data = json.loads(REAL_TOOLS_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            logger.warning(
+                "%s is unversioned (written by Cell 0F v1, which mistyped list[str] as "
+                "string). REFUSING it; using fallback schemas. Re-run Cell 0F.",
+                REAL_TOOLS_PATH,
+            )
+            return _FALLBACK_COMPETITION_TOOLS
+        gen = (data or {}).get("generator_version")
+        tools = (data or {}).get("tools")
+        if gen != REQUIRED_REAL_TOOLS_GENERATOR:
+            logger.warning(
+                "%s was written by generator %r but %r is required. REFUSING it; using "
+                "fallback schemas. Re-run Cell 0F.",
+                REAL_TOOLS_PATH, gen, REQUIRED_REAL_TOOLS_GENERATOR,
+            )
+            return _FALLBACK_COMPETITION_TOOLS
+        if not (isinstance(tools, list) and tools and all(isinstance(d, dict) for d in tools)):
+            logger.warning("%s is malformed; using fallback schemas.", REAL_TOOLS_PATH)
+            return _FALLBACK_COMPETITION_TOOLS
+        TOOLS_SOURCE = f"{REAL_TOOLS_PATH} (generator {gen})"
+        logger.info("✓ Tool schemas derived from the harness: %s", REAL_TOOLS_PATH)
+        return tools
     except Exception as e:  # noqa: BLE001 - never let schema loading kill the import
         logger.warning("Could not read %s (%r); using fallback schemas.", REAL_TOOLS_PATH, e)
     return _FALLBACK_COMPETITION_TOOLS
@@ -1044,7 +1068,7 @@ sys.path.insert(0, "/kaggle/working")
 import chat_format
 importlib.reload(chat_format)
 
-EXPECTED_VERSION = "2026-11-10.stage1c"
+EXPECTED_VERSION = "2026-11-10.stage1d"
 REQUIRED = ["CHAT_FORMAT_VERSION", "STRICT_TOOLS", "TOOL_RENDER_PROBES",
             "MASK_PATH_COUNTS", "assert_tool_rendering_clean",
             "build_example", "verify_and_print_samples",
@@ -1779,9 +1803,10 @@ print("LIVE SIGNATURES vs COMPETITION_TOOLS")
 print("=" * 72)
 print("\n".join(report))
 
+GENERATOR_VERSION = "2026-11-10.0F-v2"   # must match chat_format.REQUIRED_REAL_TOOLS_GENERATOR
 out = Path("/kaggle/working/real_tools.json")
-out.write_text(json.dumps(generated, indent=2))
-print(f"\n✓ Generated {len(generated)} schemas -> {out}")
+out.write_text(json.dumps({"generator_version": GENERATOR_VERSION, "tools": generated}, indent=2))
+print(f"\n✓ Generated {len(generated)} schemas -> {out} (generator {GENERATOR_VERSION})")
 
 # Make Cell 0C's diff authoritative instead of inconclusive.
 real_tools = [getattr(T, n) for n in OUR if getattr(T, n, None) is not None]
@@ -1808,6 +1833,16 @@ print("     rewrite pass in TRAINING_FIX_PLAN_DEC2.md Stage 1.5. NOTE: for")
 print("     get_code_subgraph this is NOT a rename. The harness takes")
 print("     `nodes: list[str]`, so {\"node_id\": x} becomes {\"nodes\": [x]} —")
 print("     the VALUE changes shape, not just the key.")
+
+# chat_format caches COMPETITION_TOOLS at import time, so the file just written is not
+# in effect until the module is reloaded. Do it here rather than relying on the operator.
+import importlib, chat_format
+importlib.reload(chat_format)
+print("\n" + "=" * 72)
+print(f"chat_format reloaded. Schemas now from: {chat_format.TOOLS_SOURCE}")
+print(f"Fingerprint: {chat_format.tool_schema_fingerprint()}")
+print("Re-run Cell 0C now to write a receipt against THESE schemas.")
+print("=" * 72)
 print("=" * 72)
 ```
 

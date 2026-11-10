@@ -687,13 +687,13 @@ with open(train_tasks_file) as f:
 
         msgs = [
             {"role": "user", "content": prob},
-            {"role": "assistant", "content": f"I will query `get_code_subgraph` on `{anchor}` to localize the issue and inspect its contracts.", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_code_subgraph", "arguments": {"node_id": anchor}}}]},
+            {"role": "assistant", "content": f"I will query `get_code_subgraph` on `{anchor}` to localize the issue and inspect its contracts.", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_code_subgraph", "arguments": {"nodes": [anchor]}}}]},
             {"role": "tool", "name": "get_code_subgraph", "tool_call_id": "call_1", "content": sub_obs},
             {"role": "assistant", "content": f"Reading `{fp}` around lines {h0['start_line']}-{h0['end_line']} via `read_file`.", "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "read_file", "arguments": {"filepath": fp, "start_line": h0["start_line"], "end_line": h0["end_line"]}}}]},
             {"role": "tool", "name": "read_file", "tool_call_id": "call_2", "content": read_obs},
             {"role": "assistant", "content": f"Applying the fix in `{fp}` with `edit_file`.", "tool_calls": [{"id": "call_3", "type": "function", "function": {"name": "edit_file", "arguments": {"filepath": fp, "old_string": h0["old_string"], "new_string": h0["new_string"]}}}]},
             {"role": "tool", "name": "edit_file", "tool_call_id": "call_3", "content": json.dumps({"status": "ok", "filepath": fp, "replacements": 1})},
-            {"role": "assistant", "content": "The edit succeeded. Submitting the patch now.", "tool_calls": [{"id": "call_4", "type": "function", "function": {"name": "submit_patch", "arguments": {"description": f"Fix {inst_id} in {fp}"}}}]},
+            {"role": "assistant", "content": "The edit succeeded. Submitting the patch now.", "tool_calls": [{"id": "call_4", "type": "function", "function": {"name": "submit_patch", "arguments": {}}}]},
             {"role": "tool", "name": "submit_patch", "tool_call_id": "call_4", "content": json.dumps({"status": "ok", "patch_size": len(fix_patch), "files_changed": 1})},
             {"role": "assistant", "content": f"Resolved `{inst_id}` by updating `{fp}` and submitting the patch."},
         ]
@@ -753,6 +753,106 @@ for idx, s in enumerate(samples, start=1):
 
 assert passed_direction == len(samples), f"Direction check failed on {len(samples) - passed_direction} examples!"
 print(f"\n✓ Phase 2.2 Gate PASSED: {passed_direction}/{len(samples)} label diffs verified in the forward (buggy -> clean) direction!")
+```
+
+---
+
+#### Cell 8C: `[F6]` Rewrite Existing Trajectories to the Real Tool Interface
+
+> **Why this exists.** Cell 8A regenerates `sft_real_train.jsonl` in ~5 s on CPU, so for
+> grounded data the fix is simply to re-run it. `sft_scaled.jsonl` was produced elsewhere
+> and is not cheap to rebuild, so it has to be corrected in place.
+>
+> Phase 0.2 established that five of nine declared tools diverged from the harness. Two of
+> those appear in trajectory text: `get_code_subgraph` takes `nodes: list[str]`, not
+> `node_id: str`, and `submit_patch` takes **no arguments** at all. Every trajectory
+> therefore demonstrates at least one call the sandbox rejects — including the final one.
+>
+> The pass is idempotent: run it on already-correct files and it reports zero changes.
+
+```python
+import json, shutil
+from pathlib import Path
+
+TRAJECTORIES_DIR = Path("/kaggle/working/data/trajectories")
+
+def _fix_args(name, args):
+    """Return (new_args, what_changed) for one tool call."""
+    if not isinstance(args, dict):
+        return args, None
+    if name == "get_code_subgraph":
+        if "node_id" in args:
+            v = args.pop("node_id")
+            args["nodes"] = v if isinstance(v, list) else [v]
+            args.pop("hops", None)
+            return args, "get_code_subgraph: node_id -> nodes[]"
+        if isinstance(args.get("nodes"), str):
+            args["nodes"] = [args["nodes"]]
+            return args, "get_code_subgraph: nodes str -> list"
+    if name == "get_code_neighbors":
+        changed = []
+        if "node_id" in args:
+            args["node"] = args.pop("node_id"); changed.append("node_id -> node")
+        if "direction" in args:
+            args.pop("direction"); changed.append("dropped direction")
+        if changed:
+            return args, "get_code_neighbors: " + ", ".join(changed)
+    if name == "search_similar_code" and "top_k" in args:
+        args["k"] = args.pop("top_k")
+        return args, "search_similar_code: top_k -> k"
+    if name == "submit_patch" and args:
+        return {}, f"submit_patch: dropped {sorted(args)}"
+    return args, None
+
+total_files = total_msgs = total_fixed = 0
+summary = {}
+for f in sorted(TRAJECTORIES_DIR.glob("*.jsonl")):
+    backup = f.with_suffix(".jsonl.pre_f6")
+    if not backup.exists():
+        shutil.copy2(f, backup)
+    out, n_fixed = [], 0
+    for line in f.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        for msg in rec.get("messages", []):
+            for tc in (msg.get("tool_calls") or []):
+                fn = tc.get("function", tc)
+                name = fn.get("name")
+                new_args, what = _fix_args(name, fn.get("arguments"))
+                if what:
+                    fn["arguments"] = new_args
+                    n_fixed += 1
+                    summary[what] = summary.get(what, 0) + 1
+            total_msgs += 1
+        out.append(json.dumps(rec, ensure_ascii=False))
+    f.write_text("\n".join(out) + "\n", encoding="utf-8")
+    total_files += 1
+    total_fixed += n_fixed
+    print(f"  {f.name:<28} {len(out):>4} records, {n_fixed:>4} calls rewritten  (backup: {backup.name})")
+
+print(f"\n{total_files} file(s), {total_msgs} messages, {total_fixed} tool calls rewritten")
+for what, n in sorted(summary.items(), key=lambda kv: -kv[1]):
+    print(f"    {n:>5}x  {what}")
+
+# Hard check: no rejected argument name may survive anywhere.
+BANNED = ('"node_id"', '"top_k"')
+for f in sorted(TRAJECTORIES_DIR.glob("*.jsonl")):
+    blob = f.read_text(encoding="utf-8")
+    for b in BANNED:
+        assert b not in blob, f"{f.name} still contains {b}"
+    for line in blob.splitlines():
+        if not line.strip():
+            continue
+        for msg in json.loads(line).get("messages", []):
+            for tc in (msg.get("tool_calls") or []):
+                fn = tc.get("function", tc)
+                if fn.get("name") == "submit_patch":
+                    assert not fn.get("arguments"), "submit_patch still carries arguments"
+                if fn.get("name") == "get_code_subgraph":
+                    assert isinstance(fn.get("arguments", {}).get("nodes"), list), \
+                        "get_code_subgraph.nodes must be a list"
+print("\n✓ All trajectories conform to the real tool interface.")
 ```
 
 ---
