@@ -21,13 +21,32 @@ that a five-minute CPU assertion would have surfaced. Budget the checks, not the
 > folded tool observations are not. It passes.
 
 ### 1.1 Tool schemas — the top suspect for the score-0 run
-- [~] Dump the real ADK tool definitions from Ryan's Section 3 and diff them field by
-      field against `src/chat_format.py:COMPETITION_TOOLS`.
-- [~] **Replace the hand-written copy with a direct import** of the real schemas. A copy
-      drifts; an import cannot.
+- [x] Cell 0C v3 written. **v1 post-mortem:** it probed six guessed global names
+      (`TOOLS`, `tools`, …) on the assumption that Ryan's Section 3 defines the tools as
+      notebook variables. It does not — the harness tools live inside the installed ADK
+      packages — so discovery could never have succeeded. Worse, the F2 render probe was
+      nested inside the discovery `else`, so the miss silently skipped the one check that
+      needed no discovery. The run produced no evidence at all.
+- [x] v2/v3 discovery: structural search over globals, a walk of
+      `swegemma`/`adk_eval_core`/`adk_submission`, and a **source-level grep** of the
+      harness `.py` files for all 9 tool names and 6 critical parameter names. The grep
+      runs unconditionally — a tool name absent from every harness source file is scored
+      as a mismatch on its own, with no importable registry required.
+- [x] F2 probe hoisted to top level: it always runs and always reports the preamble token
+      count (manuscript §5.2 evidence).
+- [x] **Hard gate** (`chat_format.assert_tool_schema_verified`). Cell 0C writes a receipt
+      carrying the chat_format version, a sha256 fingerprint of the schemas, the outcome
+      and the F2 result. `train_sft.py` calls the gate before the model loads and refuses
+      on: no receipt, stale version, schemas edited since verification, failed F2,
+      recorded mismatch, or an inconclusive verification without an explicit
+      `TOOL_SCHEMA_ACK=1`. An acknowledgement cannot rescue a real mismatch.
+      Covered by `tests/test_tool_schema_gate.py` (10 checks, offline).
+- [ ] **RUN Cell 0C on Kaggle.** Still outstanding; this is the blocking item.
 - [ ] Record every mismatch found. If any parameter name differed, that is very likely the
       whole explanation for "6/14 submitted, score 0" — `edit_file` rejecting the call,
       then `submit_patch` on an unmodified tree.
+- [ ] If the diff comes back clean, the score-0 cause moves to patch application /
+      `submit_patch` semantics — see the `git apply --check` column added to Cell 11.
 
 ### 1.2 Make silent fallbacks loud
 - [x] `chat_format.py:render` and `build_example` both wrap the `tools=` render in
