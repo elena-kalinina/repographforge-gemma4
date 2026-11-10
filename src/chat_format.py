@@ -21,7 +21,7 @@ logger = logging.getLogger("chat_format")
 # Bump on every change. The Kaggle notebook carries its own `%%writefile` copy of this
 # file, so the two can drift; Cell 4B compares this string and refuses to proceed on a
 # mismatch. A stale copy silently reinstates F1 and F2, which is how four runs were lost.
-CHAT_FORMAT_VERSION = "2026-11-10.stage1"
+CHAT_FORMAT_VERSION = "2026-11-10.stage1b"
 
 # --- F2 (silent preamble fallback) guards -------------------------------------------
 # Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
@@ -62,6 +62,175 @@ def assert_tool_rendering_clean() -> None:
             f"{TOOL_RENDER_FAILURES[0]}"
         )
     logger.info("✓ Tool declarations present in every rendered example (F2 gate passed).")
+
+
+# --- Phase 0.2 tool-schema verification receipt -------------------------------------
+# A gate is only as good as its chokepoint. `assert_tool_rendering_clean()` above proves
+# the declarations REACHED the training text; it cannot prove they are the RIGHT
+# declarations. COMPETITION_TOOLS is a hand-written transcription of the harness tools,
+# and training on a wrong parameter name produces a policy whose calls the sandbox
+# rejects — a run that submits patches and scores zero, with no error at training time.
+#
+# Cell 0C performs the reconciliation and writes a receipt here. `train_sft.py` refuses
+# to start without a receipt that is CURRENT (same chat_format version, same tool
+# schemas) and CLEAN. There is no way to reach training without passing through it.
+TOOL_SCHEMA_RECEIPT_PATH = Path("/kaggle/working/.tool_schema_verified.json")
+
+# Outcomes Cell 0C may record:
+#   "clean"        – real schemas found and every name + parameter matched
+#   "mismatch"     – real schemas found and they differ; training is forbidden
+#   "inconclusive" – no importable registry; only source-grep evidence available
+VALID_OUTCOMES = ("clean", "mismatch", "inconclusive")
+
+
+def tool_schema_fingerprint(tools: Optional[List[Dict[str, Any]]] = None) -> str:
+    """Stable hash of the tool schemas, so an edited parameter invalidates a receipt."""
+    import hashlib
+
+    tools = COMPETITION_TOOLS if tools is None else tools
+    canonical = json.dumps(tools, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def write_tool_schema_receipt(
+    outcome: str,
+    *,
+    f2_ok: bool,
+    f2_preamble_tokens: Optional[int] = None,
+    discovery: str = "",
+    mismatches: Optional[List[str]] = None,
+    source_evidence: Optional[Dict[str, Any]] = None,
+    path: Optional[Path] = None,
+) -> Path:
+    """Called by Cell 0C. Records WHAT was verified, against WHICH schemas."""
+    import datetime
+
+    if outcome not in VALID_OUTCOMES:
+        raise ValueError(f"outcome must be one of {VALID_OUTCOMES}, got {outcome!r}")
+    path = Path(path) if path is not None else TOOL_SCHEMA_RECEIPT_PATH
+    receipt = {
+        "chat_format_version": CHAT_FORMAT_VERSION,
+        "tool_schema_fingerprint": tool_schema_fingerprint(),
+        "tool_names": [
+            (t.get("function", t) if isinstance(t, dict) else {}).get("name")
+            for t in COMPETITION_TOOLS
+        ],
+        "outcome": outcome,
+        "f2_ok": bool(f2_ok),
+        "f2_preamble_tokens": f2_preamble_tokens,
+        "discovery": discovery,
+        "mismatches": list(mismatches or []),
+        "source_evidence": source_evidence or {},
+        "written_at": datetime.datetime.now().isoformat(timespec="seconds"),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+    logger.info("✓ Tool-schema receipt written to %s (outcome=%s)", path, outcome)
+    return path
+
+
+def _gate_fail(reason: str, remedy: str) -> None:
+    raise RuntimeError(
+        "\n"
+        + "=" * 72
+        + "\nTOOL-SCHEMA GATE: TRAINING REFUSED\n"
+        + "=" * 72
+        + f"\n  Reason: {reason}\n\n  Remedy:\n{remedy}\n"
+        + "=" * 72
+        + "\n  Why this gate exists: training on wrong tool schemas costs ~3 GPU hours\n"
+        "  and produces a run that converges, completes, submits patches, and scores\n"
+        "  zero. There is no error at training time. This is the only place it can\n"
+        "  be caught before the GPU spend.\n"
+    )
+
+
+def assert_tool_schema_verified(
+    *,
+    path: Optional[Path] = None,
+    allow_inconclusive: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Hard gate. Call at the top of any training entrypoint. Returns the receipt.
+
+    `allow_inconclusive` defaults to the TOOL_SCHEMA_ACK=1 environment variable, so
+    proceeding on source-grep evidence alone is a deliberate, recorded act.
+    """
+    import os
+
+    path = Path(path) if path is not None else TOOL_SCHEMA_RECEIPT_PATH
+    if allow_inconclusive is None:
+        allow_inconclusive = os.environ.get("TOOL_SCHEMA_ACK") == "1"
+
+    if not path.exists():
+        _gate_fail(
+            f"no verification receipt at {path}",
+            "    Run Cell 0C (Phase 0.2 tool-schema reconciliation). It writes the\n"
+            "    receipt as its last step.",
+        )
+
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        _gate_fail(f"receipt at {path} is unreadable ({e!r})", "    Delete it and re-run Cell 0C.")
+
+    got_ver = receipt.get("chat_format_version")
+    if got_ver != CHAT_FORMAT_VERSION:
+        _gate_fail(
+            f"receipt was written against chat_format {got_ver!r}, "
+            f"but this is {CHAT_FORMAT_VERSION!r}",
+            "    chat_format.py changed since verification. Re-run Cell 0C.",
+        )
+
+    got_fp = receipt.get("tool_schema_fingerprint")
+    cur_fp = tool_schema_fingerprint()
+    if got_fp != cur_fp:
+        _gate_fail(
+            f"COMPETITION_TOOLS changed since verification "
+            f"(receipt {got_fp}, current {cur_fp})",
+            "    The tool schemas were edited after Cell 0C ran. Re-run Cell 0C so the\n"
+            "    verification applies to the schemas you are about to train on.",
+        )
+
+    if not receipt.get("f2_ok"):
+        _gate_fail(
+            "the F2 probe failed: tool declarations do not survive into rendered text",
+            "    The chat template is dropping `tools=`. Fix rendering before training;\n"
+            "    a model trained without declarations never learns the tool surface.",
+        )
+
+    outcome = receipt.get("outcome")
+    if outcome == "mismatch":
+        ms = receipt.get("mismatches") or []
+        detail = "".join(f"      {m}\n" for m in ms[:10]) or "      (none recorded)\n"
+        _gate_fail(
+            "Cell 0C found tool-schema mismatches:\n" + detail.rstrip(),
+            "    Reconcile COMPETITION_TOOLS with the harness. Prefer importing the real\n"
+            "    schemas over editing the copy — a copy drifts, an import cannot.",
+        )
+
+    if outcome == "inconclusive" and not allow_inconclusive:
+        _gate_fail(
+            "Cell 0C could not locate importable harness schemas; only source-grep "
+            "evidence is available",
+            "    Read the source evidence Cell 0C printed. If every tool name and\n"
+            "    parameter name was found in the harness source and you accept that as\n"
+            "    sufficient, re-run training with TOOL_SCHEMA_ACK=1 set:\n"
+            "        os.environ['TOOL_SCHEMA_ACK'] = '1'\n"
+            "    Setting it is a recorded decision to train on unconfirmed schemas.",
+        )
+
+    logger.info(
+        "✓ Tool-schema gate passed (outcome=%s, f2_preamble=%s tokens, discovery=%s)",
+        outcome,
+        receipt.get("f2_preamble_tokens"),
+        receipt.get("discovery") or "n/a",
+    )
+    if outcome == "inconclusive":
+        logger.warning(
+            "⚠ Training on UNCONFIRMED tool schemas (TOOL_SCHEMA_ACK=1). "
+            "Record this in the run log — it is a limitation of the resulting model."
+        )
+    return receipt
+
 
 # Phase 3.4 Budget-Based System Prompt (replaces the brittle 1-file/turn-3 prohibitions)
 DEFAULT_SYSTEM_PROMPT = """You are an autonomous software engineering agent equipped with a pre-computed repository code graph.
