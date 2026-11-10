@@ -39,6 +39,7 @@ This guide implements the complete, error-proof sequence from `DIAGNOSIS.md` and
 │  [Cell 0C] Phase 0.2: Diff real ADK tool schemas vs COMPETITION_TOOLS  │
 │            *** BLOCKING — writes the receipt train_sft.py requires *** │
 │  [Cell 0D] Phase 0.2 drill-down: run only if 0C flags a parameter      │
+│  [Cell 0E] Phase 0.2: real graph-tool signatures + the tool registry   │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
 ┌───────────────────────────────────▼────────────────────────────────────┐
@@ -1462,6 +1463,130 @@ if not shown:
 print("\n" + "=" * 72)
 print("READ THE PARAMETER NAME ABOVE. If it is not `node_id`, that is the")
 print("score-0 cause: both graph tools reject every call the policy makes.")
+print("=" * 72)
+```
+
+---
+
+#### Cell 0E: `[Phase 0.2 drill-down]` Read the Authoritative Tool Surface
+
+> **Cell 0D §1 was a null result, and that is informative.** It scanned exactly **one**
+> non-`.py` file across all three packages. Finding nothing there is not evidence that
+> `node_id` is absent — the scan had nowhere to look. What it does establish is that the
+> harness ships no JSON/YAML schema files, so the Python source *is* the entire tool
+> surface, and Cell 0C's `node_id` = 0 across 98 `.py` files stands unqualified.
+
+> Cell 0D's candidate list also named **`registry.py`**. Cell 0C recorded
+> `outcome=inconclusive` because it found no module-level tool list — but a file called
+> `registry.py` means a registry exists in some other shape. Recovering it flips the
+> receipt to `clean`/`mismatch` and removes the need for `TOOL_SCHEMA_ACK`.
+
+```python
+# =============================================================================
+# Cell 0E — Read the authoritative tool surface. Two targets:
+#
+#   graph.py     the two tools whose required parameter `node_id` appears
+#                nowhere in the harness. Print their real signatures and
+#                docstrings verbatim.
+#   registry.py  Cell 0C found no importable registry and recorded
+#                outcome=inconclusive, which makes the gate refuse training.
+#                A file literally named registry.py says one exists — it was
+#                simply not a module-level list. Find it and the outcome can
+#                become clean/mismatch instead of inconclusive.
+# =============================================================================
+import re, sys, inspect, importlib, pkgutil, json
+from pathlib import Path
+sys.path.insert(0, "/kaggle/working")
+from chat_format import COMPETITION_TOOLS
+
+roots = {}
+for _p in ("swegemma", "adk_eval_core", "adk_submission"):
+    try:
+        roots[_p] = Path(importlib.import_module(_p).__file__).parent
+    except Exception:
+        pass
+
+def _find(fname):
+    return [f for r in roots.values() for f in r.rglob(fname)]
+
+# --------------------------------------------- 1. the graph tools, verbatim
+print("=" * 72)
+print("1. GRAPH TOOLS — verbatim source")
+print("=" * 72)
+GRAPH = ("get_code_subgraph", "get_code_neighbors")
+seen = set()
+for f in [x for n in ("graph.py", "tools.py", "agent_runner.py") for x in _find(n)]:
+    if f in seen:
+        continue
+    seen.add(f)
+    try:
+        lines = f.read_text(errors="ignore").split("\n")
+    except Exception:
+        continue
+    for i, ln in enumerate(lines):
+        m = re.match(r"\s*(?:async\s+)?def\s+(\w+)", ln)
+        if not m:
+            continue
+        if not any(g in m.group(1) for g in GRAPH):
+            continue
+        # print until the def's body is clearly past the signature + docstring
+        print(f"\n--- {f}:{i+1} ---")
+        depth, j, printed = 0, i, 0
+        while j < len(lines) and printed < 40:
+            print(f"  {j+1:>5} | {lines[j]}")
+            depth += lines[j].count("(") - lines[j].count(")")
+            printed += 1
+            j += 1
+            if printed > 1 and depth <= 0 and re.match(r"\s*(return|[a-z_]+\s*=|if |for |try)", lines[j] if j < len(lines) else ""):
+                break
+
+# ------------------------------------------------ 2. the registry, resolved
+print("\n" + "=" * 72)
+print("2. TOOL REGISTRY")
+print("=" * 72)
+for f in _find("registry.py"):
+    print(f"\n--- {f} ---")
+    try:
+        src = f.read_text(errors="ignore")
+    except Exception:
+        continue
+    for i, ln in enumerate(src.split("\n")[:120]):
+        print(f"  {i+1:>4} | {ln}")
+
+# Try to pull the live registry object out of the imported module.
+print("\n  Live registry objects:")
+for _p, _root in roots.items():
+    for _mi in pkgutil.walk_packages([str(_root)], prefix=_p + "."):
+        if not _mi.name.endswith((".registry", ".tools", ".graph")):
+            continue
+        try:
+            m = importlib.import_module(_mi.name)
+        except Exception as e:
+            print(f"    {_mi.name}: import failed ({e!r})")
+            continue
+        for k, v in vars(m).items():
+            if k.startswith("_"):
+                continue
+            if isinstance(v, dict) and v and all(isinstance(x, str) for x in v):
+                print(f"    {_mi.name}.{k}: dict[{len(v)}] keys={sorted(v)[:12]}")
+            elif isinstance(v, (list, tuple)) and 3 <= len(v) <= 40:
+                print(f"    {_mi.name}.{k}: {type(v).__name__}[{len(v)}]")
+            elif callable(v) and (k.endswith("_tool") or k in
+                                  {t.get('function', t)['name'] for t in COMPETITION_TOOLS}):
+                try:
+                    print(f"    {_mi.name}.{k}{inspect.signature(v)}")
+                except (TypeError, ValueError):
+                    print(f"    {_mi.name}.{k}(<signature unavailable>)")
+
+print("\n" + "=" * 72)
+print("WHAT TO DO WITH THIS")
+print("=" * 72)
+print("  - If the graph tools take a parameter other than `node_id`, that is the")
+print("    score-0 cause: the policy's first move fails validation every time.")
+print("    Fix COMPETITION_TOOLS to match, re-run Cell 0C, then train.")
+print("  - If a live registry turned up above, set `real_tools = <it>` at the top")
+print("    of Cell 0C and re-run: the outcome becomes clean/mismatch rather than")
+print("    inconclusive, and the gate stops needing TOOL_SCHEMA_ACK.")
 print("=" * 72)
 ```
 
