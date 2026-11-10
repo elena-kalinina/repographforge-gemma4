@@ -51,12 +51,16 @@ point at in a log or a table. The reframe's whole value is that it's checkable.
       ```
       - [ ] Download the log into `experiments/logs/` — needed for 9.1 (every number
             traces to a log) and 9.4 (artifact release) regardless of the figure.
-      - [ ] **Establish provenance:** which run is it, and which leaderboard score?
-            An unattributed curve cannot be placed against a resolution rate, which is
-            the entire point of the figure.
-      - [ ] If the file covers SFT *and* RFT in one series, mark the stage boundary on the
-            figure — §5.3 (F3) argues RFT erased what SFT taught, and that boundary is
-            where it would show.
+      - [x] **Provenance: resolved as far as the records allow (2026-11-10).** The log
+            holds the whole campaign — 7 dated runs, 73 loss points. Three name
+            themselves as submissions 1–3; the other four cannot be attributed. Decision:
+            **leave unmapped.** §7.2 states the gap explicitly and §9.9 records it as a
+            limitation, rather than inferring the mapping from chronology.
+      - [x] Stage boundaries marked: the figure colours the two RFT passes red. Both
+            trained on 4 examples for ~28 s and finished at ~2× the loss of the SFT they
+            overwrote (1.414 vs 0.720; 1.067 vs 0.638). Folded into §5.3.
+      - [x] **2.4 COMPLETE.** `experiments/plots/loss_curves.png`,
+            `experiments/logs/train_loss_points.csv` and the source log are committed.
 - [ ] **2.3 (original wording)** From the score-0 run's traces: per task, did `edit_file` succeed, was the
       submitted diff non-empty, did it apply. Even without test execution this
       distinguishes "never edited" from "edited wrongly" — and it's the F4/F5 evidence.
