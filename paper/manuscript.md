@@ -232,6 +232,10 @@ Because Stage B runs *after* Stage A and writes to the same adapter, the final p
 
 **Compounding factors.** The filter accepted 4 of 50 tasks, so Stage B trained on 4 examples — approximately 4 optimizer steps at the configured accumulation — with gradient norm falling from 239.7 to 7.29 in 29 seconds. The judge was additionally the policy adapter itself rather than the base model, so the filter was contaminated.
 
+**Measured.** The campaign log records **two** RFT passes, not one, and both are the same shape: 4 trajectories, 29.25 s and 27.31 s of wall-clock, four logged steps each. Their final training losses were **1.414** and **1.067**, against **0.720** and **0.638** for the SFT runs they were written over — the rejection stage finished at roughly *twice the loss* of the stage it replaced, after half a minute of training on four examples, and then shipped as the submitted adapter because it ran last.
+
+That is the signature worth remembering. A stage that trains for 29 seconds on 4 examples and raises the loss it inherited is not performing rejection fine-tuning in any meaningful sense; it is overwriting a trained adapter with noise. Nothing in the pipeline objected, because nothing compared the two stages' losses, counted the accepted set, or asked whether the filter and the behaviour being filtered for were compatible.
+
 **Fix.** Extract patches from `edit_file` tool-call arguments. Require a minimum accepted count before training. Use the unadapted base model as judge.
 
 **Assertion.**
@@ -435,9 +439,21 @@ A re-run addressing (1) and (2), with false-positive rates reported separately f
 
 ### 7.2 The central observation: loss convergence against resolution
 
-Every run in the campaign converged. The SFT v1 run fell 2.046 → 0.3935. The SFT v2 run fell 2.877 → 0.9554 in under 20 minutes. The RFT pass fell 1.79 → 1.083 with gradient norm stabilising 239.7 → 7.29.
+Every run in the campaign converged. The complete log — 73 logged loss points across seven runs — is released with this paper; the figure plots it.
 
-Resolution across those same checkpoints: 0/14, 0/14, 0/14, 1/14, 1/14, 0/14, 0/14.
+| # | Run | Date | n | Final `train_loss` | Wall-clock |
+| :--- | :--- | :--- | ---: | ---: | ---: |
+| 1 | First SFT | Oct 30 | 112 | 0.720 | 31 min |
+| 2 | SFT, 2nd attempt | Oct 31 | 112 | 1.057 | 21 min |
+| 3 | **RFT**, submission 1 | — | **4** | **1.414** | **29 s** |
+| 4 | SFT, scaled dataset | Nov 4 | — | 0.638 | 56 min |
+| 5 | **RFT** | Nov 4 | **4** | **1.067** | **27 s** |
+| 6 | SFT, corrected tool calls, submission 2 | Nov 5 | — | 0.571 | 57 min |
+| 7 | SFT, submission 3 | Nov 9 | — | **0.349** | 131 min |
+
+Resolution across these checkpoints: 0/14, 0/14, 0/14, 1/14, 1/14, 0/14, 0/14.
+
+Two readings of this table matter. First, **the best-converged run is the worst-performing one**: run 7 reached the lowest training loss of the entire campaign, 0.349, and scored 0.00 on the leaderboard. Whatever the loss was measuring, it was improving monotonically while the agent was not. Second, the two RFT passes are visibly anomalous — 29 and 27 seconds against 21 to 131 minutes — and *raise* the loss they inherited. Both facts were in the log the whole time. Neither was looked at, because the number we were watching was going down.
 
 Plotted together — loss on one axis, resolution on the other — these form the paper's central figure, and the argument of §8 in a single image. Loss convergence carried **no information** about whether the policy could terminate a turn (F1), whether it had ever seen the tool declarations it would receive (F2), whether the final stage had erased the behaviour of the first (F3), whether its output format matched the parser (F4), or whether the metric being optimised measured anything (F5).
 
