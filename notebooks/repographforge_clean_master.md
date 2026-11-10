@@ -194,6 +194,15 @@ Sets up `DATA_DIR`, `WORKING_DIR`, `AGENT_DIR`, `GRAPH_DIR`, `EMBEDDINGS_DIR`, a
 > The Kaggle cell must also be a **Code** cell; pasted into a Markdown cell it renders as
 > text and runs nothing.
 >
+> **Syntax highlighting cuts off partway down this block — that is expected.** The body
+> is ~39,000 characters and most Markdown renderers stop highlighting at roughly 24,000,
+> which lands around `if isinstance(args, str):` (line 511 of 864). It is a renderer
+> limit, not a formatting error: the file parses as valid Python and this block is
+> verified byte-identical to `src/chat_format.py` on every regeneration. A genuine fence
+> or quote problem would break at a delimiter, not at an arbitrary offset mid-`try`.
+> Once `src/` is published as a Kaggle Dataset this cell becomes a one-line `cp` and the
+> whole question disappears.
+>
 > *(Resolves B1, B2, B4, B5, C1, C2.)*
 
 ```python
