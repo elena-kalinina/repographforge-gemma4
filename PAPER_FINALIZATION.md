@@ -41,9 +41,22 @@ point at in a log or a table. The reframe's whole value is that it's checkable.
       table) added to the master notebook. 12B reports the F6 signature directly:
       *submitted with no successful edit*. Run 12A first and paste the schema — the
       extraction probes generically and must be checked before its numbers are trusted.
-- [ ] **2.4 AT RISK:** no training logs found alongside the traces. If the loss curves are
-      not recoverable, §7.2's figure cannot be built and the section must stand on §7.1's
-      checkpoint table plus the single loss figure quoted in the abstract. Decide early.
+- [~] **2.4** `train_log_sft_rft.log` RECOVERED from a Kaggle notebook version
+      (2026-11-10). `src/parse_training_log.py` added — tolerant of HF `Trainer` dict
+      lines, JSONL, and `loss=`/`step=` key-value forms, and it says which pattern matched
+      rather than returning an empty series. Writes a CSV and the §7.2 figure:
+      ```bash
+      python3 src/parse_training_log.py experiments/logs/train_log_sft_rft.log \
+          --plot experiments/plots/loss_curve.png
+      ```
+      - [ ] Download the log into `experiments/logs/` — needed for 9.1 (every number
+            traces to a log) and 9.4 (artifact release) regardless of the figure.
+      - [ ] **Establish provenance:** which run is it, and which leaderboard score?
+            An unattributed curve cannot be placed against a resolution rate, which is
+            the entire point of the figure.
+      - [ ] If the file covers SFT *and* RFT in one series, mark the stage boundary on the
+            figure — §5.3 (F3) argues RFT erased what SFT taught, and that boundary is
+            where it would show.
 - [ ] **2.3 (original wording)** From the score-0 run's traces: per task, did `edit_file` succeed, was the
       submitted diff non-empty, did it apply. Even without test execution this
       distinguishes "never edited" from "edited wrongly" — and it's the F4/F5 evidence.
