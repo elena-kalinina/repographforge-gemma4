@@ -38,6 +38,7 @@ This guide implements the complete, error-proof sequence from `DIAGNOSIS.md` and
 │  [Cell 4B] Gate: assert the written chat_format.py is current          │
 │  [Cell 0C] Phase 0.2: Diff real ADK tool schemas vs COMPETITION_TOOLS  │
 │            *** BLOCKING — writes the receipt train_sft.py requires *** │
+│  [Cell 0D] Phase 0.2 drill-down: run only if 0C flags a parameter      │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
 ┌───────────────────────────────────▼────────────────────────────────────┐
@@ -1317,6 +1318,150 @@ elif outcome == "mismatch" or not f2_ok:
 else:
     print(">>> Gate will REFUSE training unless you set os.environ['TOOL_SCHEMA_ACK']='1',")
     print("    which records a deliberate decision to train on unconfirmed schemas.")
+```
+
+---
+
+#### Cell 0D: `[Phase 0.2 drill-down]` Resolve the `node_id` Finding
+
+> **Run only if Cell 0C flagged something.** Cell 0C reported all 9 tool names present
+> in the harness source but `node_id` in **zero** `.py` files. `node_id` is the
+> *required* parameter of `get_code_subgraph` and `get_code_neighbors` — the two tools
+> `DEFAULT_SYSTEM_PROMPT` orders the model to call first. Two caveats before concluding:
+> Cell 0C scanned only `*.py`, and a grep is evidence of absence only where it looked.
+> This cell widens the net to JSON/YAML/Jinja and then reads the real signatures out of
+> `agent_runner.py`, which matched 6 of our 9 tools.
+
+```python
+# =============================================================================
+# Cell 0D — Drill down on the `node_id` finding.
+#
+# Cell 0C reported all 9 tool names present in the harness source, but
+# `node_id` in ZERO .py files. `node_id` is the REQUIRED parameter of
+# get_code_subgraph and get_code_neighbors — the two tools the system prompt
+# orders the model to call FIRST. If the harness calls that parameter
+# something else, every graph call fails argument validation, the budget
+# burns on retries, and what reaches submit_patch is an unmodified tree.
+#
+# Two things to settle:
+#   1. Cell 0C only scanned *.py. If the schemas live in JSON/YAML, `node_id`
+#      could be present and simply not greppable there. Widen the net.
+#   2. agent_runner.py matched 6 of our 9 tools. That is the file that defines
+#      the real tool surface. Read the actual signatures out of it.
+# =============================================================================
+import re, sys, json, inspect, importlib
+from pathlib import Path
+sys.path.insert(0, "/kaggle/working")
+from chat_format import COMPETITION_TOOLS
+
+PKGS = ("swegemma", "adk_eval_core", "adk_submission")
+roots = {}
+for _p in PKGS:
+    try:
+        roots[_p] = Path(importlib.import_module(_p).__file__).parent
+    except Exception:
+        pass
+
+# ---------------------------------------------------------- 1. widen the net
+print("=" * 72)
+print("1. NON-PYTHON SCHEMA FILES — is `node_id` declared outside .py?")
+print("=" * 72)
+EXTS = ("*.json", "*.yaml", "*.yml", "*.toml", "*.txt", "*.md", "*.jinja", "*.j2")
+other = {}
+for _r in roots.values():
+    for pat in EXTS:
+        for f in _r.rglob(pat):
+            try:
+                other[str(f)] = f.read_text(errors="ignore")
+            except Exception:
+                pass
+print(f"  scanned {len(other)} non-.py files")
+for tok in ("node_id", "node", "symbol", "symbol_id", "qualified_name", "entity_id", "name"):
+    hit = [f for f, s in other.items() if re.search(r"\b" + tok + r"\b", s)]
+    print(f"    {'✓' if hit else '✗'} {tok:<16} {len(hit)} file(s)"
+          + (f"  e.g. {Path(hit[0]).name}" if hit else ""))
+
+# ------------------------------------------- 2. read the real tool surface
+print("\n" + "=" * 72)
+print("2. REAL TOOL SIGNATURES FROM THE HARNESS")
+print("=" * 72)
+OUR = {}
+for t in COMPETITION_TOOLS:
+    f = t.get("function", t)
+    props = (f.get("parameters") or {}).get("properties", {}) or {}
+    OUR[f["name"]] = (set(props), set((f.get("parameters") or {}).get("required", [])))
+
+targets = [f for r in roots.values() for f in r.rglob("*.py")
+           if f.name in ("agent_runner.py", "tools.py", "agent.py", "toolset.py")]
+# plus any file that mentions >=3 of our tool names
+for r in roots.values():
+    for f in r.rglob("*.py"):
+        if f in targets:
+            continue
+        try:
+            s = f.read_text(errors="ignore")
+        except Exception:
+            continue
+        if sum(1 for n in OUR if re.search(r"\b" + n + r"\b", s)) >= 3:
+            targets.append(f)
+print(f"  candidate definition files: {[t.name for t in targets]}\n")
+
+DEF_RE = re.compile(
+    r"^\s*(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)", re.M)
+for f in targets:
+    try:
+        src = f.read_text(errors="ignore")
+    except Exception:
+        continue
+    found = []
+    for m in DEF_RE.finditer(src):
+        fname, args = m.group(1), m.group(2)
+        base = fname[:-5] if fname.endswith("_tool") else fname
+        if base in OUR or fname in OUR:
+            params = [a.split(":")[0].split("=")[0].strip()
+                      for a in args.split(",") if a.strip()]
+            params = [p for p in params if p not in ("self", "cls", "*", "**kwargs", "ctx")]
+            found.append((base, fname, params))
+    if found:
+        print(f"  --- {f} ---")
+        for base, fname, params in found:
+            ours_props, ours_req = OUR.get(base, (set(), set()))
+            extra = [p for p in params if p not in ours_props]
+            missing = [p for p in sorted(ours_props) if p not in params]
+            flag = "✓" if not extra and not missing else "✗"
+            print(f"    {flag} {fname}({', '.join(params)})")
+            if extra:
+                print(f"        harness-only params : {extra}")
+            if missing:
+                print(f"        we declare, absent  : {missing}")
+        print()
+
+# ------------------- 3. verbatim context around the graph tools (the suspects)
+print("=" * 72)
+print("3. VERBATIM CONTEXT: get_code_subgraph / get_code_neighbors")
+print("=" * 72)
+shown = 0
+for f in targets:
+    try:
+        lines = f.read_text(errors="ignore").split("\n")
+    except Exception:
+        continue
+    for i, ln in enumerate(lines):
+        if re.search(r"\bget_code_(subgraph|neighbors)\b", ln):
+            lo, hi = max(0, i - 3), min(len(lines), i + 12)
+            print(f"\n  {f.name}:{i+1}")
+            for j in range(lo, hi):
+                print(f"    {j+1:>5} | {lines[j]}")
+            shown += 1
+            break
+    if shown >= 4:
+        break
+if not shown:
+    print("  (no match in candidate files — widen `targets` above)")
+print("\n" + "=" * 72)
+print("READ THE PARAMETER NAME ABOVE. If it is not `node_id`, that is the")
+print("score-0 cause: both graph tools reject every call the policy makes.")
+print("=" * 72)
 ```
 
 ---
