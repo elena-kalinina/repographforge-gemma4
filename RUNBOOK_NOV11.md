@@ -1,224 +1,245 @@
-# Runbook — Nov 11, one session, paper due Nov 12
+# Runbook — paper due Nov 12, 2026
 
-Written 2026-11-10 late. Everything here is ordered. Do it top to bottom.
-
-`chat_format` is at **2026-11-10.stage1d**. Anything pasted into Kaggle before tonight is
-stale. The gates will tell you, but re-pasting first is faster than being told.
-
-**Time budget.** Part A is ~30 min of CPU session. Part B is the paper and is the whole
-day. Part C is Nov 12. If Part B runs long, cut from §B4 (marked OPTIONAL), never from §B5.
+**This document is self-contained.** It assumes no memory of how any of it was arrived at.
+Everything it asserts is checkable from the repository. Work top to bottom.
 
 ---
 
-## Part A — Kaggle CPU session: land the F6 correction (~30 min)
+## 0. State as of end of Nov 10
 
-F6: five of nine declared tools diverged from the harness. Corrected in the repo; none of
-it is in your Kaggle notebooks yet.
+### Done, verified, committed
 
-### A0. After a session restart — what you do and do not need
+- **F6 (interface transcription drift) found, corrected, written up.** Five of the nine
+  declared tools diverged from the harness. Corrected in `src/chat_format.py`, in all
+  three trajectory generators, and in the data. Full enumeration in manuscript §5.6.
+- **Gates 8 and 9 implemented**, with offline tests that need no GPU:
+  ```bash
+  python3 tests/test_chat_format_masking.py
+  python3 tests/test_tool_schema_gate.py
+  ```
+  Both pass. Run them first on a new machine — they are the fastest proof the checkout
+  is sound.
+- **Training corpus swept and corrected** (data-prep Cell 8C v3, run successfully).
+  Grounded trajectories lost 0 of 114; the two model-generated files lost 27.7% and
+  30.5% as unrepairable. Numbers are in §5.4 and §4.2.
+- **Master Cells 4, 4B, 0C, 0F run on Kaggle.** 0C reported `outcome=clean`.
+  F2 confirmed fixed: the preamble renders at **1,110 tokens** with declarations present.
+- **Campaign training log recovered and parsed.** `experiments/logs/train_log_rft_sft.log`
+  → `experiments/plots/loss_curves.png` + `experiments/logs/train_loss_points.csv`.
+  §7.2 carries the seven-run table.
+- **No TODOs remain in `paper/manuscript.md`.**
+- README, `PROGRESS_LOG.md` and `competition_plan.md` realigned with the reframed paper.
 
-**Data preparation notebook: no prerequisites.** Cell 8A imports only `json` and `re`,
-creates its own directories, and auto-partitions `train_tasks.jsonl` from the competition
-input when it is missing. It needs no ADK, no transformers patch, no graph data, no GPU —
-so Ryan's Sections 1–3 are **not** required here. Running data-prep Cell 1 first is
-harmless and costs seconds, but 8A does not depend on it.
+### Current versions — check these before trusting any Kaggle cell
 
-- [ ] **Cell 0 (NEW)** — run first. Reports which `.jsonl` survived the restart, whether
-      each still contains stale arguments, and whether `real_tools.json`, `chat_format.py`
-      and the receipt are present.
+| Thing | Value |
+| :--- | :--- |
+| `chat_format.CHAT_FORMAT_VERSION` | `2026-11-10.stage1e` |
+| Tool-schema fingerprint | `649592b1b964a77b` |
+| `real_tools.json` generator | `2026-11-10.0F-v2` |
 
-**The one thing that may not survive:** `sft_scaled.jsonl` is produced by
-`src/teacher_rollouts.py`, a GPU/LLM job that is **not** in either notebook. If `/kaggle/
-working` was cleared, 8A rebuilds the grounded 115 but nothing rebuilds the synthetic
-~184, and Cell 8C will have only the grounded file to rewrite. For the paper this blocks
-nothing — run the sequence on what exists and state the subset. For Dec 2 it becomes a
-choice between regenerating the synthetic set and training grounded-only, and
-grounded-only was already Stage 4's ablation.
+Verify with:
+```bash
+python3 -c "import sys; sys.path.insert(0,'src'); import chat_format as c; print(c.CHAT_FORMAT_VERSION, c.tool_schema_fingerprint())"
+```
 
-**Master notebook: yes, you need Ryan's Sections 1–3 and the transformers fix.** Unlike
-data prep, these are real dependencies:
+### Not done
 
-- [ ] **Cell 1** — installs `swegemma` / `adk_eval_core` / `adk_submission` from the
-      wheelhouse. Cell 0F imports `swegemma.tools`; without this it cannot run at all.
-- [ ] **Cell 2** — transformers 5.13.1 decorator patch and torchao disarm. Cells 0C and 0F
-      both construct an `AutoTokenizer`, which fails without it.
-- [ ] **Cell 3** — Ryan's Sections 2 & 3, paths and graph utilities. Cells 0C/0F do not
-      strictly need it; Cell 6 does, and it is cheap. Run it.
-
-Only then 4 → 4B → 0F → 0C → 6.
-
-### A1. Data preparation notebook
-
-Run order is **Cell 0 → 8A → 8C → 8B → 9**, which is not the notebook's own order. 8B is a gate and
-should see the final artefact, not an intermediate. 8C does not touch `edit_file` or
-`read_file`, which is all 8B inspects, so this reordering cannot change 8B's verdict — it
-just means the verdict is about the file you will actually train on.
-
-- [ ] **Cell 8A** — re-paste, run. Emits `{"nodes": [anchor]}` and `submit_patch` with no
-      arguments. ~5 s on CPU. Regenerates `sft_real_train.jsonl`.
-- [ ] **Cell 8C** — NEW, paste, run. Rewrites every `.jsonl` in place for the tools 8A
-      does not regenerate — chiefly `sft_scaled.jsonl`, whose generator is not in this
-      notebook. Backs each file up to `.pre_f6`. Idempotent.
-      Expect: a per-file count, the number of string-encoded calls, a breakdown of
-      rewrites, and the distinct `submit_patch` argument names. Ends `✓ All trajectories
-      conform to the real tool interface.` If it reports offenders instead, it now names
-      file, line, tool and raw arguments — paste that rather than the traceback.
-- [ ] **Capture the 8C v3 output verbatim.** Four numbers go into §5.4, which holds a
-      TODO for them: the string-encoded call count, the full `submit_patch` argument-name
-      table, the rewrite breakdown, and the quarantine count with reasons.
-- [ ] **Check the quarantine count against the dataset floor** (master Cell 6 asserts
-      `len(kept) >= 60`). Quarantined records are dropped, so a large count moves the
-      Dec 2 plan toward grounded-only.
-- [ ] **Cell 8B** — run (unchanged). 10/10 must pass.
-- [ ] **Cell 9** — re-paste if you have not since the merge-bug fix, run. Check the
-      grounded/synthetic split it prints; the >50% synthetic warning is expected.
-
-**Record for the paper:** the 8C breakdown counts. "N trajectories, M malformed calls, of
-which K were the terminal `submit_patch`" is a sentence §5.6 currently cannot make.
-
-### A2. Master notebook
-
-Order is **4 → 4B → 0F → 0C → 6**. 0F now precedes 0C: it derives the schemas and reloads
-the module, so 0C's receipt describes what you will actually train on.
-
-- [ ] **Cell 4** — re-paste from `src/chat_format.py` (stage1d), run.
-- [ ] **Cell 4B** — re-paste, run. Must print `✓ chat_format.py is current (version
-      2026-11-10.stage1d)` plus the schema source and the 9 tool names.
-      It now also asserts `node_id` cannot reappear.
-- [ ] **Cell 0F** — re-paste, run. The `real_tools.json` already on Kaggle was written by
-      0F **v1**, which typed `list[str]` as `"string"`. chat_format now refuses any file
-      not stamped `2026-11-10.0F-v2` and says so. Re-running 0F replaces it.
-      Expect all nine rows `✓`, then `chat_format reloaded. Schemas now from:
-      /kaggle/working/real_tools.json (generator 2026-11-10.0F-v2)`.
-- [ ] **Cell 0C** — run (no re-paste; unchanged). The old receipt is invalid twice over —
-      version and fingerprint both moved. Expect **`outcome=clean`** this time, because
-      0F set `real_tools`. If it still says `inconclusive`, 0F did not reload; re-run 0F.
-- [ ] **Cell 6** — re-paste. Carries the Gate 8 call. Do not run training today.
-- [ ] **Cell 11** — re-paste if not done since the audit fix (`git apply --check` +
-      RESOLVED columns).
-
-**Stop here.** Training is Part D (post-paper). The point of today is that the next
-training run starts from verified schemas and clean data.
+- Cells 12A/12B (eval-trace forensics) — **written, never run**. This is item B1.
+- §2.2 strict submission rates.
+- Table 1 re-run.
+- The F1 ablation (optional, cuttable).
 
 ---
 
-## Part B — The paper (Nov 11, all day)
+## 1. Setting up a different laptop
 
-Most of §6, §7 and §8 of `PAPER_FINALIZATION.md` are already written into the manuscript;
-the boxes were never ticked. What genuinely remains:
+```bash
+git clone https://github.com/elena-kalinina/Gemma4_Competition.git repographforge-gemma4
+cd repographforge-gemma4
+python3 tests/test_chat_format_masking.py   # must print ALL CHECKS PASSED
+python3 tests/test_tool_schema_gate.py      # must print ALL CHECKS PASSED
+```
 
-### B1. Fold today's F6 evidence into §5.6 (~30 min) — DO FIRST
-- [ ] Add the 8C counts: how many trajectories, how many malformed calls, how many were
-      the terminal `submit_patch`. This converts "every trajectory demonstrates a rejected
-      call" from an inference about the generators into a measured property of the data.
-- [ ] Add 0C's `outcome=clean` receipt as the verification artefact Gate 8 produces.
-- [ ] Decide §7: may it state that F6 accounts for the score-0 submission pattern? With
-      the enumeration complete and the data counts in hand, **yes** — but phrase it as
-      *accounts for*, not *caused*, since no corrected run exists.
+No GPU, no ADK, no Kaggle session needed for either. If both pass, the checkout is good.
 
-### B2. The three numbers still missing (~2–3 h)
-- [ ] **2.2** Recompute historical submission rates under the strict metric
-      (applies-cleanly AND tests-pass). This is the honest version of the 85.7% → 0.0%
-      claim in §5.5 and it needs a table, not a sentence.
-- [ ] **2.3** Per-task breakdown from the score-0 run: did `edit_file` succeed, did the
-      patch apply, did tests run. This is now *more* valuable than it was yesterday —
-      with F6 known, a per-task trace showing graph calls failing first is direct
-      corroboration rather than speculation.
-- [ ] **2.4** All runs' loss curves in one figure against resolution. **This is the
-      paper's central image** and §7.2 currently describes it in prose.
+Only `matplotlib` is needed beyond the standard library, and only to regenerate the
+figure (`pip install matplotlib`).
 
-### B3. Table 1 — the one positive result (~2 h)
-- [ ] **5.1** Re-run with task-specific negatives.
-- [ ] **5.2** Confirm the judge is the **base** model, never `main_lora`.
-- [ ] **5.3** Report stratified by negative class.
-- [ ] **5.4** State n, how negatives were generated, and that they are synthetic.
-- [ ] If it does not re-run in time: mark Table 1 **provisional** in the caption and say
-      so in §9. Do not ship it unmarked.
+---
+
+## 2. Where every cell lives
+
+Line numbers are the **body** of each cell — what you paste, excluding the fence.
+Re-check them with `grep -n '#### Cell' <file>` if the notebooks have been edited since.
+
+**`notebooks/repographforge_data_preparation.md`**
+
+| Cell | Body lines | Purpose |
+| :--- | ---: | :--- |
+| 0 | 42–99 | Restart survival check — what `.jsonl` exist, are they clean |
+| 8A | 672–785 | Build grounded trajectories (F6-corrected) |
+| 8B | 794–828 | Patch-direction gate, 10 samples |
+| 8C | 873–1079 | Rewrite existing `.jsonl` to the real tool interface |
+| 9 | 1088–1133 | Merge into `sft_combined.jsonl`, report composition |
+
+**`notebooks/repographforge_clean_master.md`**
+
+| Cell | Body lines | Purpose |
+| :--- | ---: | :--- |
+| 4 | 209–1132 | Write `chat_format.py` — **copy from `src/chat_format.py`, not from here** |
+| 4B | 1143–1192 | Version gate on the written formatter |
+| 0C | 1219–1478 | Tool-schema diff; writes the training receipt |
+| 0D | 1494–1622 | F6 drill-down (diagnostic, already served its purpose) |
+| 0E | 1641–1746 | Harness tool surface (diagnostic, already served its purpose) |
+| 0F | 1765–1929 | Derive schemas from the harness; writes `real_tools.json` |
+| 6 | 1964–2141 | Write `train_sft.py`; calls Gates 8 and 9 |
+| 11 | 2271–2427 | Holdout audit with applies-cleanly and RESOLVED columns |
+| 12A | 2448–2483 | **Eval-trace schema discovery** |
+| 12B | 2495–2577 | **Eval-trace per-task table** |
+
+Every pasteable cell prints a version banner as its first line. **If you do not see the
+banner, the paste did not land** and nothing else in that cell's output means what it
+appears to. This has caused three silent failures; do not skip the check.
+
+---
+
+## 3. Nov 11 — the work, in order
+
+### B1. Eval-trace forensics — DO FIRST (~45 min, CPU Kaggle session)
+
+The traces from the score-0 run are on Kaggle at `traces/trace_<task>.json`, 14 files for
+the 14 holdout tasks, with matching `<task>.log`.
+
+Why this is first: §5.6 argues that mis-declared tool parameters account for "patches
+submitted, nothing resolved", but argues it from the schemas and the training data — not
+from what the agent did at evaluation time. The traces are what it did.
+
+- [ ] Run **Cell 12A** (master, lines 2448–2483). It dumps the schema of one trace.
+- [ ] Read the schema. 12B probes generically and its numbers should not be trusted until
+      the layout is confirmed. If 12A shows something 12B will not find, fix 12B first.
+- [ ] Run **Cell 12B** (lines 2495–2577). The line that matters:
+      ```
+      submitted with NO edit : n/14   <-- F6's predicted signature
+      ```
+- [ ] If that count is high, add it to §5.6 and let §7 state that F6 **accounts for** the
+      score-0 submission pattern. Keep "accounts for" — no corrected run exists, so
+      "caused" is not available.
+- [ ] If 12B reports traces it could not parse, fix the extraction rather than reporting
+      the partial number. Reporting a confident count over an unknown denominator is
+      failure F5, which this table exists to correct.
+
+### B2. Strict submission rates (~1–2 h)
+
+- [ ] Recompute historical submission rates under the strict metric: **applies cleanly
+      AND tests pass**, not attempts. This is the honest version of the 85.7% → 0.0%
+      claim in §5.5 and it needs a table.
+- [ ] Source: the same Kaggle eval outputs as B1, plus `<task>.log`.
+
+### B3. Table 1 — the one positive result (~2 h, needs GPU)
+
+Current numbers in §6, from `experiments/logs/verifier_alignment_table1.json`:
+`V_free` P 0.8660 / R 0.6512 / F1 0.7434 / κ 0.6401 against
+`V_graph` P 0.8571 / R 0.7442 / F1 0.7967 / κ 0.7051.
+
+- [ ] Re-run with task-specific negatives (`src/candidate_patch_generator.py`).
+- [ ] Confirm the judge is the **base** model, never `main_lora`.
+- [ ] Report stratified by negative class.
+- [ ] State n, how negatives were generated, and that they are synthetic.
+- [ ] **If it does not re-run in time:** mark Table 1 provisional in the caption and say
+      so in §9. It is already marked provisional in §6 — leave that marking in place.
+      Do not ship it unmarked.
 
 ### B4. OPTIONAL — the F1 ablation
+
 - [ ] Two adapters identical but for stop-token masking; report ceiling-hit rate and
-      submission rate. **Cut this first if time runs short.** §9.2 already labels F1
-      observational, which is defensible. A rushed ablation is not.
+      submission rate.
+- [ ] **Cut this first if time runs short.** §9 already labels F1 observational, which is
+      defensible. A rushed ablation is not.
 
 ### B5. The honesty pass (~1 h) — NEVER CUT
-- [ ] **9.1** Every number traces to a log or table. Anything that does not, delete.
-- [ ] **9.2** Read start to finish as a hostile reviewer: "what measurement supports this?"
-- [ ] **9.3** Reconcile `PROGRESS_LOG.md` and `competition_plan.md` — both still contain
-      the old triumphal claims the manuscript now retracts. A reviewer who opens the repo
-      will find them.
-- [ ] **Fix the five-vs-six inconsistency.** §1 says "five post-training runs" and then
-      lists six leaderboard scores. You know which is the baseline; I do not.
+
+- [ ] Every number in the paper traces to a file in `experiments/logs/`. Anything that
+      does not, delete. (Checked once on Nov 10 for the training-loss numbers — all of
+      them trace. Table 1 and the submission rates have not been checked this way.)
+- [ ] Read start to finish as a hostile reviewer, asking of each claim: *what measurement
+      supports this?*
+- [ ] **Open inconsistency, unresolved:** §1 says "five post-training runs" and then lists
+      six leaderboard scores (0.00, 0.00, 0.00, 0.03, 0.01, 0.00). The training log shows
+      **seven** training runs, two of which were RFT passes. Decide what "run" means in
+      §1 and make the two consistent. This needs your knowledge of which submission was
+      which; it cannot be settled from the repository.
 - [ ] Confirm §5.6's second-order admission survives editing — the `list[str]` mistyping
-      in our own derivation script. It is the most credible paragraph in the section.
+      in our own schema-derivation script. It is the most credible paragraph in the
+      section and the easiest to cut by accident.
 
 ---
 
-## Part C — Nov 12
+## 4. Nov 12 — submit
 
-- [ ] Artifact release: `src/chat_format.py`, `tests/test_chat_format_masking.py`,
-      `tests/test_tool_schema_gate.py`, Cells 0C–0F, Cell 8C. The gates are the
-      contribution; ship them runnable.
+- [ ] Artifact release: `src/chat_format.py`, `src/parse_training_log.py`,
+      `tests/test_chat_format_masking.py`, `tests/test_tool_schema_gate.py`,
+      master Cells 0C–0F and 12A/12B, data-prep Cell 8C. The gates are the contribution;
+      ship them runnable.
 - [ ] Final read.
 - [ ] Submit.
 
 ---
 
-## Part D0 — resuming for training: what you must re-run
+## 5. Resuming for training (Dec 2 track — NOT for Nov 11)
 
-`/kaggle/working` has survived your restarts, so the *artefacts* persist: `chat_format.py`,
-`real_tools.json`, the receipt, `train_sft.py`, and the corrected `.jsonl`. What does **not**
+`/kaggle/working` has survived session restarts, so the artefacts persist: `chat_format.py`,
+`real_tools.json`, the receipt, `train_sft.py`, the corrected `.jsonl`. What does **not**
 persist is anything installed into the Python environment or defined in memory.
 
 | Cell | Re-run? | Why |
 | :--- | :--- | :--- |
 | Master 1, 2, 3 | **Always** | `pip install` and module globals die with the session |
-| Master 4 | **Yes** | `chat_format` is now `stage1e`; also re-establishes the module |
-| Master 4B | **Always** | It is the gate. Cheap, and it tells you if anything drifted |
+| Master 4 | **Yes** | `chat_format` is `stage1e`; also re-establishes the module |
+| Master 4B | **Always** | It is the gate. Cheap, and it reports drift |
 | Master 0C–0F | **No**, if 4B passes | The receipt persists and the gate validates it |
-| Data prep 8A–9 | **No** | The `.jsonl` persist and are already F6-corrected |
+| Data prep 8A–9 | **No** | The `.jsonl` persist and are F6-corrected |
 | Master 5, 6, 7 | **Yes** | GPU flush, rewrite `train_sft.py`, train |
 
 **You do not have to remember this.** `train_sft.py` calls `assert_tool_schema_verified()`
-before the model loads. If the receipt is missing, stale, or written against different
-schemas, it refuses and names the remedy. The gate is the memory.
+and `assert_trajectories_conform()` before the model loads. A missing, stale or mismatched
+receipt refuses with the remedy named. The gate is the memory.
 
-One exception worth knowing: **`chat_format` is at `stage1e`**, which adds Gate 9 and
-invalidates your current receipt by version. So before the next training run you need
-Cell 4 → 4B → 0F → 0C → 6 once more. That is the version gate doing its job, not a
-setback — and it is the last schema change planned.
+One exception: `chat_format` moved to `stage1e` after the last Kaggle run, which
+invalidates the existing receipt by version. **Before the next training run:**
+4 → 4B → 0F → 0C → 6, once. That is the version gate working, not a setback.
 
-### Why Gate 9 was added
-
-`assert_tool_schema_verified` proves the *declared* schemas match the harness. It says
-nothing about the *trajectories*, and those drifted independently: five of nine tools were
-mis-declared, and separately every trajectory supplied `submit_patch(description=...)`.
-Cell 0C going green told you the declarations were right while the data still taught the
-rejected call. `assert_trajectories_conform(raw_records)` now runs in Cell 6 and refuses
-if any demonstrated call sends a parameter the declarations do not contain.
+Remaining training work is in `TRAINING_FIX_PLAN_DEC2.md`. Its first open decision:
+`sft_combined.jsonl` was cleaned in place (304 → 250) rather than re-merged by Cell 9.
+Re-running Cell 9 rebuilds it from the cleaned sources (114 grounded + 82 synthetic),
+giving a different count and a majority-grounded ratio. Both files are conformant. Pick
+one, record which, and report its composition in §4.2.
 
 ---
 
-## Part D — after the paper (Dec 2 competition track)
+## 6. Findings a cold reader needs
 
-Not for Nov 11. See `TRAINING_FIX_PLAN_DEC2.md`.
+These are argued in full in `paper/manuscript.md`; this is the index.
 
-1. Stage 2: chunked masked loss, restore `MAX_LEN=8192`.
-2. Stage 3: clean SFT on corrected data → submission 1.
-3. Stage 4: grounded-only ablation → submission 2.
-4. Upload `src/` as a Kaggle Dataset. Three inline copies have drifted so far
-   (`chat_format.py`, `train_sft.py`, Cell 8A's trajectory builder); two have already
-   cost a run.
+| Finding | Where |
+| :--- | :--- |
+| F6: five of nine tools mis-declared; `submit_patch` takes **no arguments** while every trajectory sent one | §5.6 |
+| F2 fixed: preamble measures **1,110 tokens** (not the ~1,830 char/4 estimate, which overshot 65%) | §5.2, §4.4 |
+| 26.0% of 1,933 tool calls were string-encoded; the rest dicts, same corpus | §5.4 |
+| Model-generated trajectories invented four `edit_file` schemas; ~30% unrepairable | §5.4, §4.2 |
+| **Two** RFT passes, both on 4 examples for ~28 s, both ending at ~2× the loss they overwrote | §5.3, §7.2 |
+| The best-converged run (0.349, lowest of the campaign) scored **0.00** | §7.2 |
+| Run-to-submission mapping deliberately **not** inferred | §7.2, §9.9 |
 
 ---
 
-## What today changed, in one paragraph
+## 7. Documents
 
-F6 — interface transcription drift — is confirmed and corrected. Five of nine tools
-diverged: `get_code_subgraph` takes `nodes: list[str]` not `node_id`, `get_code_neighbors`
-takes `node`/`edge_type` not `node_id`/`direction`, `search_similar_code` takes `k` not
-`top_k`, and `submit_patch` takes **no arguments** while every trajectory supplied a
-`description`. The last of these means the terminal action of every demonstrated episode
-was malformed. Schemas are now derived from the harness rather than transcribed, the
-derivation is version-gated, the trainer refuses to start without a clean receipt, and the
-training data is rewritten to match. None of it has been validated by a run, which is
-stated in §9.9 and must stay stated.
+| File | Contents |
+| :--- | :--- |
+| `paper/manuscript.md` | The paper |
+| `PAPER_FINALIZATION.md` | Full checklist with per-item history |
+| `TRAINING_FIX_PLAN_DEC2.md` | Dec 2 training work |
+| `STATUS_REVIEW.md` | Post-fix audit, including a retracted section |
+| `DIAGNOSIS.md` | Original 13-defect diagnosis |
+| `PROGRESS_LOG.md`, `competition_plan.md` | Pre-reframe logs, with retraction banners |
