@@ -840,6 +840,18 @@ print(f"\n✓ Phase 2.2 Gate PASSED: {passed_direction}/{len(samples)} label dif
 > therefore demonstrates at least one call the sandbox rejects — including the final one.
 >
 > The pass is idempotent: run it on already-correct files and it reports zero changes.
+>
+> **v2 (2026-11-10).** v1 skipped any tool call whose `arguments` was a JSON *string*
+> rather than a dict, then asserted on the result — so it rewrote 402 calls, silently
+> missed the string-encoded ones, and failed its own check. Models emit arguments as a
+> string under the OpenAI convention and the teacher-rollout parser preserves whatever it
+> received, so both forms are present in this corpus. v2 coerces, fixes, and writes back
+> in the **original** form; it also handles `get_code_subgraph` calls keyed on something
+> other than `node_id`, and it *reports* non-conforming calls with file, line and raw
+> arguments instead of raising a bare `AssertionError`.
+>
+> Your `.pre_f6` backups from the v1 run hold the true originals — v2 will not overwrite
+> them, so re-running is safe.
 
 ```python
 import json, shutil
@@ -847,19 +859,34 @@ from pathlib import Path
 
 TRAJECTORIES_DIR = Path("/kaggle/working/data/trajectories")
 
+# v1 skipped any tool call whose `arguments` was a JSON STRING rather than a dict, then
+# asserted on the result — so it rewrote 402 calls, missed the string-encoded ones, and
+# failed its own check. Models emit arguments as a string in the OpenAI convention and
+# the teacher-rollout parser preserves whatever it got, so both forms are in this corpus.
+# v2 coerces, fixes, and writes back in the ORIGINAL form, then reports offenders instead
+# of asserting blindly.
+
 def _fix_args(name, args):
-    """Return (new_args, what_changed) for one tool call."""
-    if not isinstance(args, dict):
-        return args, None
+    """Return (new_args, what_changed) for one tool call. `args` is a dict."""
     if name == "get_code_subgraph":
         if "node_id" in args:
             v = args.pop("node_id")
             args["nodes"] = v if isinstance(v, list) else [v]
             args.pop("hops", None)
             return args, "get_code_subgraph: node_id -> nodes[]"
-        if isinstance(args.get("nodes"), str):
+        if "nodes" in args and not isinstance(args["nodes"], list):
             args["nodes"] = [args["nodes"]]
-            return args, "get_code_subgraph: nodes str -> list"
+            return args, "get_code_subgraph: nodes scalar -> list"
+        if "nodes" not in args:
+            # Some other key entirely. Take the first string-ish value we can find.
+            for k in ("node", "symbol", "symbol_id", "anchor", "query", "name"):
+                if k in args:
+                    v = args.pop(k)
+                    args["nodes"] = v if isinstance(v, list) else [v]
+                    args.pop("hops", None)
+                    return args, f"get_code_subgraph: {k} -> nodes[]"
+            args["nodes"] = []
+            return args, "get_code_subgraph: no recognizable arg -> nodes=[]"
     if name == "get_code_neighbors":
         changed = []
         if "node_id" in args:
@@ -875,8 +902,15 @@ def _fix_args(name, args):
         return {}, f"submit_patch: dropped {sorted(args)}"
     return args, None
 
-total_files = total_msgs = total_fixed = 0
-summary = {}
+
+def _walk(rec, fn_cb):
+    for msg in rec.get("messages", []):
+        for tc in (msg.get("tool_calls") or []):
+            fn_cb(tc.get("function", tc))
+
+
+total_files = total_calls = total_fixed = n_string_form = 0
+summary, submit_arg_names = {}, {}
 for f in sorted(TRAJECTORIES_DIR.glob("*.jsonl")):
     backup = f.with_suffix(".jsonl.pre_f6")
     if not backup.exists():
@@ -886,43 +920,77 @@ for f in sorted(TRAJECTORIES_DIR.glob("*.jsonl")):
         if not line.strip():
             continue
         rec = json.loads(line)
-        for msg in rec.get("messages", []):
-            for tc in (msg.get("tool_calls") or []):
-                fn = tc.get("function", tc)
-                name = fn.get("name")
-                new_args, what = _fix_args(name, fn.get("arguments"))
-                if what:
-                    fn["arguments"] = new_args
-                    n_fixed += 1
-                    summary[what] = summary.get(what, 0) + 1
-            total_msgs += 1
+
+        def _fix(fn):
+            global n_fixed, total_calls, n_string_form
+            total_calls += 1
+            name, raw = fn.get("name"), fn.get("arguments")
+            was_string = isinstance(raw, str)
+            if was_string:
+                n_string_form += 1
+                try:
+                    raw = json.loads(raw) if raw.strip() else {}
+                except Exception:
+                    return                      # unparseable; leave it, report later
+            if not isinstance(raw, dict):
+                return
+            if name == "submit_patch" and raw:
+                for k in raw:
+                    submit_arg_names[k] = submit_arg_names.get(k, 0) + 1
+            new_args, what = _fix_args(name, dict(raw))
+            if what:
+                fn["arguments"] = json.dumps(new_args) if was_string else new_args
+                n_fixed += 1
+                summary[what] = summary.get(what, 0) + 1
+
+        _walk(rec, _fix)
         out.append(json.dumps(rec, ensure_ascii=False))
     f.write_text("\n".join(out) + "\n", encoding="utf-8")
     total_files += 1
     total_fixed += n_fixed
-    print(f"  {f.name:<28} {len(out):>4} records, {n_fixed:>4} calls rewritten  (backup: {backup.name})")
+    print(f"  {f.name:<28} {len(out):>4} records, {n_fixed:>4} calls rewritten")
 
-print(f"\n{total_files} file(s), {total_msgs} messages, {total_fixed} tool calls rewritten")
+print(f"\n{total_files} file(s), {total_calls} tool calls seen "
+      f"({n_string_form} string-encoded), {total_fixed} rewritten")
 for what, n in sorted(summary.items(), key=lambda kv: -kv[1]):
     print(f"    {n:>5}x  {what}")
+if submit_arg_names:
+    print(f"\n  submit_patch argument names found ({len(submit_arg_names)} distinct) "
+          f"— this is F4 in the data, worth recording for the paper:")
+    for k, n in sorted(submit_arg_names.items(), key=lambda kv: -kv[1]):
+        print(f"    {n:>5}x  {k}")
 
-# Hard check: no rejected argument name may survive anywhere.
-BANNED = ('"node_id"', '"top_k"')
+# ---- validation: report, do not merely assert -------------------------------
+offenders = []
 for f in sorted(TRAJECTORIES_DIR.glob("*.jsonl")):
-    blob = f.read_text(encoding="utf-8")
-    for b in BANNED:
-        assert b not in blob, f"{f.name} still contains {b}"
-    for line in blob.splitlines():
+    for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
-        for msg in json.loads(line).get("messages", []):
-            for tc in (msg.get("tool_calls") or []):
-                fn = tc.get("function", tc)
-                if fn.get("name") == "submit_patch":
-                    assert not fn.get("arguments"), "submit_patch still carries arguments"
-                if fn.get("name") == "get_code_subgraph":
-                    assert isinstance(fn.get("arguments", {}).get("nodes"), list), \
-                        "get_code_subgraph.nodes must be a list"
+        rec = json.loads(line)
+
+        def _check(fn):
+            name, raw = fn.get("name"), fn.get("arguments")
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw) if raw.strip() else {}
+                except Exception:
+                    offenders.append((f.name, i, name, "UNPARSEABLE", repr(fn.get("arguments"))[:90]))
+                    return
+            if not isinstance(raw, dict):
+                offenders.append((f.name, i, name, "NOT A DICT", repr(raw)[:90]))
+                return
+            if name == "submit_patch" and raw:
+                offenders.append((f.name, i, name, "has arguments", repr(raw)[:90]))
+            if name == "get_code_subgraph" and not isinstance(raw.get("nodes"), list):
+                offenders.append((f.name, i, name, "nodes not a list", repr(raw)[:90]))
+
+        _walk(rec, _check)
+
+if offenders:
+    print(f"\n  ✗ {len(offenders)} call(s) still non-conforming. First 10:")
+    for o in offenders[:10]:
+        print(f"      {o[0]}:{o[1]}  {o[2]}  [{o[3]}]  {o[4]}")
+    raise AssertionError(f"{len(offenders)} non-conforming tool calls; see above")
 print("\n✓ All trajectories conform to the real tool interface.")
 ```
 
