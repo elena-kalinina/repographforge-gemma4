@@ -1,5 +1,28 @@
 # RepoGraphForge: Project Progress Log & Action Plan
 
+> ## ⚠ Superseded — read [`paper/manuscript.md`](paper/manuscript.md) first
+>
+> **Status as of 2026-11-10.** This document was written *before* the work was reframed as
+> a failure taxonomy. It records the project as it was believed to be going at the time,
+> and several of its claims have since been **retracted**. It is kept unedited except for
+> the inline corrections marked `[RETRACTED]`, because a log that is quietly rewritten
+> after the fact is worth nothing.
+>
+> What the manuscript now establishes, and this file predates:
+>
+> - **Resolution was approximately zero throughout.** Leaderboard: 0.00, 0.00, 0.00, 0.03,
+>   0.01, 0.00. Reported submission rates of 71.4% / 85.7% counted *attempts*, not
+>   resolutions (failure F5).
+> - **No trajectory was ever execution-verified.** The admission filter was
+>   `len(messages) >= 4`. The words "verified" and "pristine" below are unsupported, and
+>   the filename `sft_verified.jsonl` is a misnomer.
+> - **Six silent defects (F1–F6)** were active across the campaign, including tool
+>   declarations that never reached the training text (F2) and declared tool parameters
+>   that did not match the harness (F6).
+> - **No end-task claim is supported.** Whether code-graph anchoring helps remains open.
+
+---
+
 **Repository:** `repographforge-gemma4`  
 **Current Date:** October 27, 2026  
 **Primary Goals:** 
@@ -77,7 +100,10 @@
   - **Real Tool Execution Active:** Sandbox natively intercepted and executed `get_code_subgraph`, `read_file`, `run_command`, `edit_file`, and `submit_patch`.
   - **First Autonomous Ground-Truth Bug Fix Produced:**
     - On holdout task `requests_7505`, the agent localized the proxy stream bug, modified `src/requests/models.py` at lines 161 (`RequestEncodingMixin`) and 641 (`PreparedRequest`) by introducing `hasattr(data, "read")` alongside `isinstance(data, _SupportsRead)`.
-    - Generated a clean, human-grade unified git diff patch that perfectly adheres to python duck-typing invariants.
+    - Generated a unified git diff patch. **[RETRACTED]** "human-grade" and "perfectly
+      adheres" are unsupported: this is a single qualitative case, n = 1, and the
+      campaign's resolution rate never exceeded 1 of 14 held-out tasks. See manuscript
+      §7.3, which reports this case as qualitative evidence only.
   - **Empirical Finding: Single-Path Exploration Variance & Turn Limits:**
     - The competition environment enforces a strict 10 tool-call budget per task (`limits.max_tool_calls`).
     - Under greedy, single-path exploration, the agent occasionally burns turns on trial-and-error searches (e.g. bash quote-escaping traps or reading entire files), hitting the 10-turn limit and recording `completed without explicit submit_patch call`.
@@ -144,7 +170,9 @@ With the manuscript drafted and the pilot pipeline verified, our disciplined exp
 
 ### Step 5.1: Scale Multi-Hop Teacher Rollouts (`src/teacher_rollouts.py`)
 - Expand synthetic tasks from the 1,139 pre-extracted subgraphs, explicitly filtering for **multi-file subgraphs** (edges crossing module boundaries).
-- Scale verified teacher rollouts from the 113-sample pilot to **400–600 multi-hop trajectories** (`sft_scaled.jsonl`).
+- Scale teacher rollouts from the 113-sample pilot to **400–600 multi-hop trajectories**
+  (`sft_scaled.jsonl`). **[RETRACTED]** "verified" — nothing was executed; the filter was
+  `len(messages) >= 4`.
 - Prompt teacher to model cross-file resolution: Turn 1 `get_code_subgraph` -> Turn 2 jump directly to callee file (`utils.py`) -> Turn 3 `edit_file` -> Turn 4 `submit_patch`.
 
 ### Step 5.2: Retrain Gemma 4 31B on Scaled Dataset

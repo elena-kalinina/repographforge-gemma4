@@ -186,7 +186,15 @@ Sets up `DATA_DIR`, `WORKING_DIR`, `AGENT_DIR`, `GRAPH_DIR`, `EMBEDDINGS_DIR`, a
 ---
 
 #### Cell 4: `[Phase 1 & Phase 3]` Write Canonical `/kaggle/working/chat_format.py`
-*(Note: `%%writefile` must be on Line 1 of this cell. Resolves B1, B2, B4, B5, C1, C2)*
+> **Copy from [`src/chat_format.py`](../src/chat_format.py), not from this Markdown.**
+> The body below is a verbatim mirror kept for review. Copying it out of the rendered
+> Markdown risks carrying the ```` ```python ```` fence line with it, and `%%writefile`
+> must be the **first line of the cell** — anything above it, even a blank line, stops the
+> magic firing and the cell executes 800 lines of module source instead of writing a file.
+> The Kaggle cell must also be a **Code** cell; pasted into a Markdown cell it renders as
+> text and runs nothing.
+>
+> *(Resolves B1, B2, B4, B5, C1, C2.)*
 
 ```python
 %%writefile /kaggle/working/chat_format.py

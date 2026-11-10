@@ -150,7 +150,7 @@ expected output, including what each gate prints when it refuses.
 | [`STATUS_REVIEW.md`](STATUS_REVIEW.md) | Post-fix audit, **including a retracted section** |
 | [`PAPER_FINALIZATION.md`](PAPER_FINALIZATION.md) | Paper checklist |
 | [`TRAINING_FIX_PLAN_DEC2.md`](TRAINING_FIX_PLAN_DEC2.md) | Remaining training work |
-| [`PROGRESS_LOG.md`](PROGRESS_LOG.md), [`competition_plan.md`](competition_plan.md) | Historical logs. **Written before the reframe; they contain claims the paper now retracts.** Read the manuscript first. |
+| [`PROGRESS_LOG.md`](PROGRESS_LOG.md), [`competition_plan.md`](competition_plan.md) | Historical logs, written before the reframe. Both now carry a superseded banner and inline `[RETRACTED]` corrections on the specific claims the paper withdraws. Kept otherwise unedited — a log quietly rewritten after the fact is worth nothing. |
 
 **On `sft_verified.jsonl`.** The filename is a holdover and is misleading: the admission
 filter was `len(messages) >= 4`. Nothing in it was execution-verified. We have left the

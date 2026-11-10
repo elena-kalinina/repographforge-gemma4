@@ -107,11 +107,14 @@ point at in a log or a table. The reframe's whole value is that it's checkable.
 - [ ] **9.1** Every number in the paper traces to a log or table in `experiments/logs/`.
 - [ ] **9.2** Read the manuscript start to finish as a skeptical reviewer. Ask of each
       claim: *what would I have to run to falsify this, and did they run it?*
-- [~] **9.3** Reconcile `PROGRESS_LOG.md` and `competition_plan.md` with the final text.
-      **Partially done 2026-11-10:** the README now flags both as pre-reframe documents
-      containing retracted claims, and directs readers to the manuscript first. The files
-      themselves are still unreconciled. Decide whether to edit them or leave them as
-      dated artefacts with the README's warning — the second is defensible and cheaper.
+- [x] **9.3** Reconcile `PROGRESS_LOG.md` and `competition_plan.md` with the final text.
+      **Done 2026-11-10.** Both carry a superseded banner naming the four things the
+      manuscript establishes that they predate (resolution ~0; nothing execution-verified;
+      F1–F6 active; no end-task claim), plus inline `[RETRACTED]` notes on the specific
+      claims: "pristine"/"verified" trajectories, "perfectly adheres" on `requests_7505`,
+      and the verified-trajectory framing in the method summary. Deliberately **not**
+      rewritten otherwise — a log edited silently after the fact has no evidentiary value,
+      and the visible retractions are themselves consistent with the paper's argument.
       they currently contain the old triumphal claims and are in the repo you're releasing.
 - [ ] **9.4** Artifact release: `src/chat_format.py`, the assertion harness, the diagnostic
       notebook cells. The harness **is** the contribution — make it easy to find and run.

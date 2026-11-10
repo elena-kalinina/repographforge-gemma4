@@ -1,5 +1,28 @@
 # RepoGraphForge: Execution & Research Plan for the Gemma 4 Developer Agent Competition & Paper Track
 
+> ## ⚠ Superseded — read [`paper/manuscript.md`](paper/manuscript.md) first
+>
+> **Status as of 2026-11-10.** This document was written *before* the work was reframed as
+> a failure taxonomy. It records the project as it was believed to be going at the time,
+> and several of its claims have since been **retracted**. It is kept unedited except for
+> the inline corrections marked `[RETRACTED]`, because a log that is quietly rewritten
+> after the fact is worth nothing.
+>
+> What the manuscript now establishes, and this file predates:
+>
+> - **Resolution was approximately zero throughout.** Leaderboard: 0.00, 0.00, 0.00, 0.03,
+>   0.01, 0.00. Reported submission rates of 71.4% / 85.7% counted *attempts*, not
+>   resolutions (failure F5).
+> - **No trajectory was ever execution-verified.** The admission filter was
+>   `len(messages) >= 4`. The words "verified" and "pristine" below are unsupported, and
+>   the filename `sft_verified.jsonl` is a misnomer.
+> - **Six silent defects (F1–F6)** were active across the campaign, including tool
+>   declarations that never reached the training text (F2) and declared tool parameters
+>   that did not match the harness (F6).
+> - **No end-task claim is supported.** Whether code-graph anchoring helps remains open.
+
+---
+
 ## 1. Executive Summary & Strategic Alignment
 
 This blueprint outlines a dual-purpose strategy to compete in the **Gemma 4 Developer Agent Competition** (code submission track) and submit a high-impact empirical study to the **Gemma 4 Developer Agent Paper Track**. 
@@ -203,7 +226,8 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
 #### Abstract (~200 Words)
 
 * **Context:** Local, privacy-preserving coding agents running on consumer hardware lag behind frontier cloud agents on repository-level tasks due to poor multi-file localization and scarce post-training trajectories.
-* **Method:** Introduce *RepoGraphForge*, an adaptation of GraphForge that leverages pre-computed repository multigraphs and node embeddings (`swegemma`) to synthesize multi-hop bug-fixing tasks, evidence-anchored verification rubrics, and verified teacher trajectories for Gemma 4.
+* **Method:** Introduce *RepoGraphForge*, an adaptation of GraphForge that leverages pre-computed repository multigraphs and node embeddings (`swegemma`) to synthesize multi-hop bug-fixing tasks, evidence-anchored verification rubrics, and teacher trajectories for Gemma 4.
+  **[RETRACTED]** "verified" — no trajectory was execution-verified.
 * **Evaluation Focus:** Present a systematic comparison of unanchored LLM judges ($V_{\text{free}}$), graph-anchored rubrics ($V_{\text{graph}}$), and deterministic test execution ($V_{\text{exec}}$) during Rejection Fine-Tuning.
 * **Headline Results:** Summarize Pass@1 improvements on held-out repositories, reduction in false-positive patch drift, and token efficiency gains from graph-guided tool navigation.
 
@@ -256,9 +280,14 @@ Because the competition emphasizes **offline agents on everyday developer hardwa
 - [x] **Milestone 3: Subgraph Sampling & Synthetic Task Generation (Days 6–10)**
   - [x] Run `graph_sampler.py` across the training repos to extract 1,139 connected multi-node subgraphs (`sampled_subgraphs.jsonl`).
   - [x] Apply reverse fault injection via Gemma 4 31B to generate 350 multi-file synthetic bug tasks (`synthetic_tasks.jsonl`).
-  - [x] Collect and filter verified graph-first teacher trajectories: 113 pristine 4-turn SFT trajectories (`sft_verified.jsonl`).
+  - [x] Collect and filter graph-first teacher trajectories: 113 4-turn SFT trajectories
+        (`sft_verified.jsonl`). **[RETRACTED]** "verified" and "pristine" — the admission
+        filter was `len(messages) >= 4`. Nothing was executed and nothing was verified.
 - [x] **Milestone 4: Gemma 4 QLoRA SFT & RFT Pilot Training (Days 11–14)**
-  - [x] Train initial SFT adapter on verified teacher trajectories (Gemma 4 31B rank-32 LoRA, loss: 2.046 -> 0.3935).
+  - [x] Train initial SFT adapter (Gemma 4 31B rank-32 LoRA, loss: 2.046 -> 0.3935).
+        **[RETRACTED]** "verified" — see above. The loss convergence quoted here is the
+        paper's central observation precisely *because* it coincided with approximately
+        zero resolution.
   - [x] Evaluate SFT v1 on holdout tasks: confirmed rapid 15s code-graph bug localization (`_encode_files`, `is_file_like`, `SupportsRead`), diagnosed text-tool serialization gap.
   - [x] Refactor data formatting and training collators to enforce native Gemma 4 function-calling tokens (`<tool_call>`).
   - [x] Retrain SFT v2 with native `<tool_call>` tokens on 4x L4 GPUs (resolved `torchao 0.10.0` environment incompatibility; loss converged smoothly across 3 epochs).
