@@ -149,7 +149,12 @@ instead of on §6 and §8.
       `description`; `get_code_subgraph` takes `nodes: list[str]`, so the dataset fix is
       a value transformation, not a rename. Also records the second-order failure: the
       derivation script typed `list[str]` as `"string"` by substring match.
+- [x] **§5.4 counts filled from the Cell 8C v3 run (2026-11-10).** 1,933 tool calls,
+      503 (26.0%) string-encoded. Grounded trajectories discarded 0 of 114; the two
+      model-generated files discarded 27.7% and 30.5% as unrepairable. §4.2 updated to
+      match. **No TODOs remain in the manuscript.**
 - [ ] Decide whether §7 should state that F6 accounts for the score-0 submission
-      pattern. Holding until the enumeration is complete.
+      pattern. The enumeration is now complete and the data counts are in, so this is
+      answerable — hold only until item 2.3 (per-task traces) is attempted.
 - [ ] **Inconsistency noticed, not yet resolved:** §1 says "five post-training runs" but
       lists six leaderboard scores (0.00, 0.00, 0.00, 0.03, 0.01, 0.00). Reconcile.

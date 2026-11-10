@@ -121,6 +121,8 @@ Partitioning is strictly by repository, so holdout repositories contribute no gr
 
 The final SFT dataset (`sft_combined.jsonl`) contained **299 trajectories after preprocessing**: 115 grounded trajectories from real maintainer fixes and approximately 184 synthetic teacher trajectories. **Roughly 62% of the training signal was therefore unverified synthetic data** with hallucinated environment observations. This is a material limitation (§9) and we report it wherever a training result is discussed.
 
+A later sweep (§5.4) sharpened this. Of the model-generated trajectories, **27.7% and 30.5%** of the two synthetic files demonstrated `edit_file` operations that the harness interface cannot express — an insert, or a multi-edit against a single-replacement API — and had to be discarded rather than corrected. The grounded trajectories lost none. The unverified synthetic majority was not merely unchecked; close to a third of it was unexecutable in principle.
+
 ### 4.3 Hardware and environment
 
 All training, generation, and evaluation ran offline on 4× NVIDIA L4 (96 GB total) with `transformers 5.13.1` and vLLM at tensor parallelism $tp=4$, in a sandbox with no network access.
@@ -263,7 +265,21 @@ with asymmetric delimiters (`<|tool_call>` opening, `<tool_call|>` closing) and 
 
 The same sweep showed `edit_file` in a worse state. Its declared interface is `filepath` / `old_string` / `new_string`, and the model-generated trajectories had invented at least four alternatives: `path` / `old_content` / `new_content`; `path` / `insert_after` / `code`; and `path` / `replacements: [{old, new}]` in two spellings. The first is a renaming and can be mapped. The second is an *insert*, not a replacement, and the third is a multi-edit — neither has a faithful translation into the single-replacement interface the harness exposes. We quarantined those records rather than guess, on the principle that fabricated supervision is worse than less supervision.
 
-This is the sharpest form of the problem the taxonomy describes. A generated trajectory is accepted into training on the strength of being well-formed JSON containing a plausible tool name. Nothing in the pipeline asked whether its arguments corresponded to a function that exists. The encodings in the table above were written by us; these schemas were invented by the model and then trained on as though they were demonstrations.<!-- TODO: fill exact counts from the Cell 8C v3 run. -->
+This is the sharpest form of the problem the taxonomy describes. A generated trajectory is accepted into training on the strength of being well-formed JSON containing a plausible tool name. Nothing in the pipeline asked whether its arguments corresponded to a function that exists. The encodings in the table above were written by us; these schemas were invented by the model and then trained on as though they were demonstrations.
+
+**How much of the corpus this affected.** Sweeping all five trajectory files — 1,933 tool calls in total — **503 (26.0%)** carried their arguments as a JSON string and the remainder as a dict, in the same corpus, often in the same file. Correcting the recoverable calls and discarding the records whose `edit_file` shape had no faithful mapping produced this:
+
+| File | Records before | After | Discarded | |
+| :--- | ---: | ---: | ---: | ---: |
+| `sft_real_train.jsonl` (grounded) | 114 | 114 | **0** | 0.0% |
+| `rft_candidates.jsonl` | 200 | 200 | **0** | 0.0% |
+| `sft_verified.jsonl` (model-generated) | 112 | 81 | **31** | 27.7% |
+| `sft_scaled.jsonl` (model-generated) | 118 | 82 | **36** | 30.5% |
+| `sft_combined.jsonl` (merged) | 304 | 250 | **54** | 17.8% |
+
+The split is the finding. The grounded trajectories, constructed deterministically from real maintainer diffs by a script that emits the tool call directly, lost **nothing**. The model-generated trajectories lost **roughly three in ten**, because the model invented `edit_file` shapes — an insert, a multi-edit — that the harness's single-replacement interface cannot express at all. These are not calls with a wrong parameter name, which can be repaired; they are calls with no counterpart in the interface.
+
+The synthetic majority of our training set was therefore worse than unverified (§4.2). Close to a third of it demonstrated operations the environment does not provide.
 
 **Fix.** One shared renderer that delegates to the tokenizer's own template; never hand-write the encoding. Import tool schemas from the harness rather than transcribing them. Byte-compare a rendered training prefix against a captured evaluation prompt.
 

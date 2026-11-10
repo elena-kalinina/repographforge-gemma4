@@ -92,8 +92,27 @@ Tasks:
 - [ ] Rewrite the existing `.jsonl` on Kaggle — the data directories here hold only
       `.gitkeep`, so the trajectories live in the Kaggle working set and must be
       rewritten in place, not regenerated from this repo.
-- [ ] Re-check: `grep -c '"node_id"' data/trajectories/*.jsonl` must return 0 before
-      training.
+- [x] **Done 2026-11-10.** Cell 8C v3 reports `✓ All remaining trajectories conform`.
+      Measured: 1,933 tool calls, 503 (26.0%) string-encoded. Records discarded as
+      unrepairable — `edit_file` shapes with no counterpart in the harness interface:
+
+      | File | before | after | discarded |
+      | :--- | ---: | ---: | ---: |
+      | `sft_real_train.jsonl` (grounded) | 114 | 114 | 0 (0.0%) |
+      | `rft_candidates.jsonl` | 200 | 200 | 0 (0.0%) |
+      | `sft_verified.jsonl` | 112 | 81 | 31 (27.7%) |
+      | `sft_scaled.jsonl` | 118 | 82 | 36 (30.5%) |
+      | `sft_combined.jsonl` | 304 | 250 | 54 (17.8%) |
+
+      Grounded data lost nothing; model-generated data lost ~3 in 10. Both survivors are
+      far above the `len(kept) >= 60` floor, so training is not blocked.
+- [ ] **Decide whether to re-run Cell 9.** `sft_combined.jsonl` was cleaned in place
+      (304 → 250) rather than re-merged. Re-running Cell 9 rebuilds it from the cleaned
+      `sft_real_train` (114) + `sft_scaled` (82), which gives a different count and a
+      different grounded/synthetic ratio. Either file is now conformant; pick one, record
+      which, and report its composition in the paper rather than both.
+- [ ] Re-check before training: Gate 9 (`assert_trajectories_conform`) runs automatically
+      in Cell 6, so this is now enforced rather than remembered.
 - [ ] `TOOL_RENDER_PROBES` contains `"node_id"`. Once the schemas change, that probe
       stops appearing in rendered text and `render()` raises a **false** F2 failure.
       Update the probes in the same edit as the schemas.
