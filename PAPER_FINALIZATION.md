@@ -137,8 +137,11 @@ instead of on §6 and §8.
       - [x] §8 Gate 8 — interface identity against the harness, with the receipt design
       - [x] §9.9 — F6 is diagnosed, not repaired; no re-run has been done
       - [x] §11 conclusion, including the "silent failures queue" lesson
-- [ ] **Run Cell 0F and fold the full nine-tool enumeration into §5.6.** Currently one
-      tool is quoted verbatim and the rest are described as mechanically derived.
+- [x] **Full nine-tool enumeration folded into §5.6** as a table. 5 of 9 diverge at
+      parameter level. `submit_patch` takes no arguments while every trajectory supplies
+      `description`; `get_code_subgraph` takes `nodes: list[str]`, so the dataset fix is
+      a value transformation, not a rename. Also records the second-order failure: the
+      derivation script typed `list[str]` as `"string"` by substring match.
 - [ ] Decide whether §7 should state that F6 accounts for the score-0 submission
       pattern. Holding until the enumeration is complete.
 - [ ] **Inconsistency noticed, not yet resolved:** §1 says "five post-training runs" but

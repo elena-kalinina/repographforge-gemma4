@@ -302,7 +302,23 @@ get_code_neighbors(ctx, node, edge_type=None, ...)
                default None for all edges).
 ```
 
-Our declaration named the first parameter `node_id` and the second `direction`, typed as an enumeration over `in`, `out`, `both` — a parameter the harness does not define and a vocabulary it does not use. All nine tool *names* match; it is the parameters that drift, which is why a name-level check would have passed.
+Our declaration named the first parameter `node_id` and the second `direction`, typed as an enumeration over `in`, `out`, `both` — a parameter the harness does not define and a vocabulary it does not use.
+
+Deriving the full interface from `inspect.signature` over the harness's exported callables gives the complete picture. All nine tool *names* match; **five of nine diverge at parameter level**, which is why any name-level check would have passed:
+
+| Tool | Harness interface | Our declaration |
+| :--- | :--- | :--- |
+| `get_code_subgraph` | `nodes: list[str]` | `node_id`, `hops` |
+| `get_code_neighbors` | `node`, `edge_type=None`, `max_neighbors=50` | `node_id`, `direction` |
+| `search_similar_code` | `query`, `k=10` | `query`, `top_k` |
+| `read_file` | `filepath`, `start_line`, `end_line` | *matches* |
+| `edit_file` | `filepath`, `old_string`, `new_string`, `allow_multiple=False` | missing `allow_multiple` |
+| `write_file` | `filepath`, `content` | *matches* |
+| `run_command` | `command` | *matches* |
+| `get_status` | *no arguments* | *matches* |
+| `submit_patch` | *no arguments* | `description` |
+
+Two rows deserve emphasis. `get_code_subgraph` takes a **list** of dotted symbols, so the correction is a change of value shape, not a renaming — `{"node_id": x}` becomes `{"nodes": [x]}`. And `submit_patch` takes **no arguments at all**, while every trajectory we trained on supplies a `description`. The final action of every demonstrated episode was therefore malformed.
 
 **The defect is also in the training data.** Both trajectory generators write the argument name directly into the supervised text:
 
@@ -317,7 +333,9 @@ Every grounded and every synthetic trajectory therefore *demonstrates* the rejec
 
 **Why it surfaced last.** F6 was *masked* by F2. While the tool declarations were absent from training altogether, their content could not matter. Repairing F2 put declarations into the prompt for the first time and thereby made their correctness reachable as a question. We draw a general point from this: silent failures queue. A pipeline with several of them reveals them in dependency order, and each repair should be expected to expose the next rather than to produce a working system.
 
-**Scope of this claim.** We state what is established and what is not. Established: all nine tool names resolve in the harness source; the parameter `node_id` appears in none of its 98 Python files; and the quoted divergence for `get_code_neighbors` is read verbatim from that source. Not established: the full parameter-level enumeration for the remaining eight tools, which we derive mechanically rather than by hand (below), and — importantly — we have **not** re-run the campaign with corrected declarations. We therefore claim F6 as a defect with an identified mechanism that accounts for the observed signature, not as a repair we have validated.
+**Scope of this claim.** Established: the enumeration above, obtained from `inspect.signature` on the harness's own callables rather than by reading documentation; and the presence of the rejected argument names in the supervised text of all three trajectory generators. Not established: that correcting them repairs the agent. We have **not** re-run the campaign with derived declarations and a rewritten dataset, so we cannot report what the resolution rate becomes. We claim F6 as a defect with an identified mechanism that accounts for the observed signature — well-formed calls, patches submitted, nothing resolved — not as a validated repair.
+
+We also note a second-order instance of the same failure during the correction itself. Our schema-derivation script inferred JSON types by substring-matching the annotation text; `list[str]` contains `str`, so it typed the list-valued parameter as a string. Had that gone unnoticed, the corrected declarations would have reproduced F6 in a new form. The lesson is not that transcription requires more care but that derived artefacts need their own assertions.
 
 **Fix.** Do not re-transcribe. The harness re-exports its tools as callables, so the declarations can be *derived* from them:
 
