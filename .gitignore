@@ -24,7 +24,7 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
+# Virtual environments (local .venv is Python 3.12 via uv; see RUNBOOK_NOV11.md §1)
 .env
 .venv
 env/
@@ -51,6 +51,8 @@ experiments/logs/*
 !experiments/logs/*.json
 experiments/plots/*
 !experiments/plots/.gitkeep
+!experiments/plots/loss_curves.png
+!experiments/logs/train_loss_points.csv
 *.pt
 *.bin
 *.safetensors

@@ -21,13 +21,16 @@ logger = logging.getLogger("chat_format")
 # Bump on every change. The Kaggle notebook carries its own `%%writefile` copy of this
 # file, so the two can drift; Cell 4B compares this string and refuses to proceed on a
 # mismatch. A stale copy silently reinstates F1 and F2, which is how four runs were lost.
-CHAT_FORMAT_VERSION = "2026-11-10.stage1e"
+CHAT_FORMAT_VERSION = "2026-11-11.stage1f"
 
 # --- F2 (silent preamble fallback) guards -------------------------------------------
-# Phase 0.3 measured a MEDIAN trajectory length of 831 tokens against a tool-schema +
-# system-prompt preamble of ~1,830 tokens. A median below the preamble is arithmetically
-# impossible if the preamble is present, which proved the tool declarations were being
-# dropped by a `try/except Exception: pass` on every single training example.
+# The original trainer never passed `tools=` at all, so runs 1-5 trained without the
+# declarations by construction. The first version of this renderer then wrapped the
+# `tools=` render in `try/except Exception: pass`, so for runs 6-7 any failure would have
+# silently produced declaration-free text too. (An earlier comment here claimed to prove
+# that this happened from "median trajectory 831 tokens < preamble 1,110"; that median
+# was measured on raw message JSON, which never contains the preamble, so it proved
+# nothing. Whether the fail-open path fired in runs 6-7 is undetermined.)
 #
 # STRICT_TOOLS=True makes that condition raise instead of passing silently.
 STRICT_TOOLS: bool = True

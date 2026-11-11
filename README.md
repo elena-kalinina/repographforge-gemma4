@@ -31,14 +31,15 @@ and a set of runnable assertions that catch each one.
 | # | Failure | Mechanism | Observable signature |
 | :--- | :--- | :--- | :--- |
 | **F1** | Stop-token starvation | Masking loop clears the label on the turn-terminating token | Generation runs to `max_output_tokens`; tool calls emitted as prose |
-| **F2** | Silent preamble fallback | `try/except` around the tool-schema render fails open | Training sequences lack tool declarations; no error raised |
+| **F2** | Silent preamble fallback | Declarations never attached (runs 1–5); later `try/except` around the render fails open (runs 6–7) | Training sequences lack tool declarations; no error raised. Realised in 1–5, undetermined in 6–7 |
 | **F3** | Inter-stage format drift | RFT filter accepts markdown fences, selecting against tool calls | Submission rate falls *between* stages |
 | **F4** | Serialization fragmentation | Four incompatible tool-call encodings in one pipeline | Well-formed calls that nothing parses |
 | **F5** | Unfalsifiable metrics | Audit counts attempts, not resolutions | 85.7% reported where truth is 0.0% |
 | **F6** | Interface transcription drift | Hand-copied tool declarations diverge from the harness's real parameters | Well-formed calls the sandbox rejects; patches submitted, none resolved |
 
-F6 is the one that cost the most and surfaced last, because **F2 masked it**: declarations
-cannot be wrong while they are absent. Five of nine declared tools diverged from the
+F6 is the one that cost the most and surfaced last, because **the declarations were absent
+from training for most of the campaign** (F2): declarations cannot be wrong while they are
+absent, and the renderer that finally attached them reported success either way. Five of nine declared tools diverged from the
 harness — including `submit_patch`, which takes *no arguments* while every trajectory in
 the training set supplied one. Silent failures queue; repairing one exposes the next.
 

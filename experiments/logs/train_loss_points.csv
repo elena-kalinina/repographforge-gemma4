@@ -1,0 +1,74 @@
+run,step,epoch,loss,learning_rate
+First SFT training (complete_sft_training_milestone) Oct 30,1,0.3571,2.046,0.0001997
+First SFT training (complete_sft_training_milestone) Oct 30,2,0.7143,0.911,0.0001885
+First SFT training (complete_sft_training_milestone) Oct 30,3,1.071,0.6508,0.0001632
+First SFT training (complete_sft_training_milestone) Oct 30,4,1.429,0.5514,0.0001278
+First SFT training (complete_sft_training_milestone) Oct 30,5,1.786,0.4782,8.795e-05
+First SFT training (complete_sft_training_milestone) Oct 30,6,2.143,0.445,5e-05
+First SFT training (complete_sft_training_milestone) Oct 30,7,2.5,0.4104,2.006e-05
+First SFT training (complete_sft_training_milestone) Oct 30,8,2.857,0.3935,2.906e-06
+2nd attempt after fix (sft_attempt_2) Oct 31,1,0.3571,2.877,0.0001997
+2nd attempt after fix (sft_attempt_2) Oct 31,2,0.7143,1.267,0.0001885
+2nd attempt after fix (sft_attempt_2) Oct 31,3,1.071,0.9554,0.0001632
+2nd attempt after fix (sft_attempt_2) Oct 31,4,1.429,0.8416,0.0001278
+2nd attempt after fix (sft_attempt_2) Oct 31,5,1.786,0.7727,8.795e-05
+2nd attempt after fix (sft_attempt_2) Oct 31,6,2.143,0.7127,5e-05
+2nd attempt after fix (sft_attempt_2) Oct 31,7,2.5,0.616,2.006e-05
+2nd attempt after fix (sft_attempt_2) Oct 31,8,2.857,0.5906,2.906e-06
+1st RFT - 1st submission (milestone_4_completed_with_rft) Nov 3,1,0.5,1.79,0.0
+1st RFT - 1st submission (milestone_4_completed_with_rft) Nov 3,2,1.0,1.609,5e-05
+1st RFT - 1st submission (milestone_4_completed_with_rft) Nov 3,3,1.5,1.173,3.75e-05
+1st RFT - 1st submission (milestone_4_completed_with_rft) Nov 3,4,2.0,1.083,1.25e-05
+SFT,1,0.1739,2.689,0.00016
+SFT,2,0.3478,1.073,0.0001988
+SFT,3,0.5217,0.7881,0.0001941
+SFT,4,0.6957,0.6962,0.000186
+SFT,5,0.8696,0.6472,0.0001747
+SFT,6,1.035,0.5918,0.0001606
+SFT,7,1.209,0.4855,0.0001444
+SFT,8,1.383,0.4889,0.0001265
+SFT,9,1.557,0.4507,0.0001077
+SFT,10,1.73,0.5015,8.853e-05
+SFT,11,1.904,0.445,6.983e-05
+SFT,12,2.07,0.4463,5.223e-05
+SFT,13,2.243,0.3673,3.638e-05
+SFT,14,2.417,0.3386,2.285e-05
+SFT,15,2.591,0.3285,1.215e-05
+SFT,16,2.765,0.3174,4.66e-06
+SFT,17,2.939,0.304,6.598e-07
+RFT,1,0.5,1.353,0.0
+RFT,2,1.0,1.263,5e-05
+RFT,3,1.5,0.8834,3.75e-05
+RFT,4,2.0,0.7692,1.25e-05
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",1,0.1739,2.246,0.00016
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",2,0.3478,1.117,0.0001988
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",3,0.5217,0.7819,0.0001941
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",4,0.6957,0.683,0.000186
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",5,0.8696,0.606,0.0001747
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",6,1.035,0.5194,0.0001606
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",7,1.209,0.4449,0.0001444
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",8,1.383,0.4591,0.0001265
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",9,1.557,0.4099,0.0001077
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",10,1.73,0.4574,8.853e-05
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",11,1.904,0.4003,6.983e-05
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",12,2.07,0.3645,5.223e-05
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",13,2.243,0.2764,3.638e-05
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",14,2.417,0.2978,2.285e-05
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",15,2.591,0.2663,1.215e-05
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",16,2.765,0.2466,4.66e-06
+"Corrected tool calls for 2nd submission, sft Nov 5 corrected_sft_toll_calls",17,2.939,0.2604,6.598e-07
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",1,0.1338,1.253,0.0001
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",2,0.2676,0.603,9.881e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",3,0.4013,0.4172,9.532e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",4,0.5351,0.3418,8.967e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",5,0.6689,0.3281,8.214e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",6,0.8027,0.2336,7.309e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",7,0.9365,0.303,6.294e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",8,1.054,0.2379,5.218e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",9,1.187,0.2449,4.132e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",10,1.321,0.1961,3.087e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",11,1.455,0.2398,2.132e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",12,1.589,0.2114,1.314e-05
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",13,1.722,0.2283,6.699e-06
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",14,1.856,0.2065,2.314e-06
+"Latest fix to tool calls, sft, Nov 9, Version 26, 3rd and last submission",15,1.99,0.2148,1.903e-07

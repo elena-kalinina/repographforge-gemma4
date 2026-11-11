@@ -31,13 +31,16 @@ My original §1 claimed `MAX_LEN=2560` + drop-don't-truncate had emptied the tra
 Two things remain true and are now the live questions:
 
 **(a) 299 fitting under 2560 is hard to reconcile with the preamble being present.**
-**RESOLVED 2026-11-10 by Cell 0C.** The preamble measures **1,110 tokens** against the
-real tokenizer. (My earlier figure here, ~1,830, was a char/4 *estimate* mislabelled as
-"measured" — it overshot by 65%. Corrected throughout.) The median trajectory was 831
-tokens, so at least half the training set was shorter than the preamble alone: it was
-not present. `render()` had been swallowing the failing `tools=` render via
-`except Exception: pass`, so C2 was only half-applied. The same cell confirms F2 is now
-**fixed**: declarations render and are present in the text.
+**RE-RESOLVED 2026-11-11 — the 2026-11-10 resolution was wrong.** The preamble measures
+**1,110 tokens** against the real tokenizer (the earlier ~1,830 was a char/4 estimate).
+The 2026-11-10 note then argued: median trajectory 831 < 1,110, therefore the preamble
+was absent. But the 831 median (Cell 0A, Phase 0.3) was computed on `json.dumps(messages)`,
+which contains no preamble on either render path, so it cannot discriminate. Neither can
+the 5-of-304 drop count: 831 + 1,110 ≈ 1,940 sits comfortably under 2,560. What stands:
+runs 1–5 never passed `tools=` (DIAGNOSIS C2), so declarations were absent by
+construction; the fail-open `render()` was live for runs 6–7 and whether it fired is
+**undetermined**. Cell 0C confirms the corrected renderer attaches declarations now.
+Manuscript §5.2, §4.4, §9.11 and Appendix A carry the correction.
 
 **(b) 299 = 115 grounded + ~184 synthetic screenplays.** `sft_combined.jsonl` merges
 `sft_real_train.jsonl` with `sft_scaled.jsonl`, so **~62% of the training data is still

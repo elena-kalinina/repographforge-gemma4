@@ -152,9 +152,10 @@ def main() -> None:
         rp, fin = r["points"], (r["final"] or {})
         if not rp and not fin:
             continue
+        first_loss = f"{rp[0]['loss']:.4f}" if rp else "-"
+        last_loss = f"{rp[-1]['loss']:.4f}" if rp else "-"
         print(f"    {r['label'][:52]:<52}{str(r['n_examples']):>6}{len(rp):>5}"
-              f"{(f'{rp[0][chr(39)+chr(39)]}' if False else f'{rp[0]["loss"]:.4f}') if rp else '-':>9}"
-              f"{f'{rp[-1]["loss"]:.4f}' if rp else '-':>9}"
+              f"{first_loss:>9}{last_loss:>9}"
               f"{fin.get('train_loss', '-'):>9}{fin.get('train_runtime', '-'):>8}")
 
     first, last = pts[0], pts[-1]

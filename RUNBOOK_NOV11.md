@@ -34,7 +34,7 @@ Everything it asserts is checkable from the repository. Work top to bottom.
 
 | Thing | Value |
 | :--- | :--- |
-| `chat_format.CHAT_FORMAT_VERSION` | `2026-11-10.stage1e` |
+| `chat_format.CHAT_FORMAT_VERSION` | `2026-11-11.stage1f` (comment-only change on Nov 11: F2 evidence corrected; schemas unchanged) |
 | Tool-schema fingerprint | `649592b1b964a77b` |
 | `real_tools.json` generator | `2026-11-10.0F-v2` |
 
@@ -63,8 +63,20 @@ python3 tests/test_tool_schema_gate.py      # must print ALL CHECKS PASSED
 
 No GPU, no ADK, no Kaggle session needed for either. If both pass, the checkout is good.
 
-Only `matplotlib` is needed beyond the standard library, and only to regenerate the
-figure (`pip install matplotlib`).
+**Python.** The repo's scripts need ≥3.10 (`parse_training_log.py` was 3.12-only until
+Nov 11; now 3.9-safe, but do not rely on the macOS system Python). A local `.venv` on
+Python 3.12 exists (created Nov 11 with `uv`; `uv` lives at
+`~/Library/Python/3.9/bin/uv`, Python 3.12 under `~/.local/share/uv`). Use it:
+
+```bash
+source .venv/bin/activate          # or: .venv/bin/python <script>
+# recreate from scratch if needed:
+~/Library/Python/3.9/bin/uv venv --python 3.12 .venv
+~/Library/Python/3.9/bin/uv pip install --python .venv/bin/python matplotlib networkx numpy pandas
+```
+
+`matplotlib` is only needed to regenerate the figure; `networkx`/`numpy` for `src/data_loader.py`
+and `src/graph_sampler.py`; `pandas` for the Cell 11 audit if run locally.
 
 ---
 
@@ -195,7 +207,7 @@ persist is anything installed into the Python environment or defined in memory.
 | Cell | Re-run? | Why |
 | :--- | :--- | :--- |
 | Master 1, 2, 3 | **Always** | `pip install` and module globals die with the session |
-| Master 4 | **Yes** | `chat_format` is `stage1e`; also re-establishes the module |
+| Master 4 | **Yes** | `chat_format` is `stage1f`; also re-establishes the module |
 | Master 4B | **Always** | It is the gate. Cheap, and it reports drift |
 | Master 0C–0F | **No**, if 4B passes | The receipt persists and the gate validates it |
 | Data prep 8A–9 | **No** | The `.jsonl` persist and are F6-corrected |
@@ -205,7 +217,7 @@ persist is anything installed into the Python environment or defined in memory.
 and `assert_trajectories_conform()` before the model loads. A missing, stale or mismatched
 receipt refuses with the remedy named. The gate is the memory.
 
-One exception: `chat_format` moved to `stage1e` after the last Kaggle run, which
+One exception: `chat_format` moved to `stage1f` after the last Kaggle run, which
 invalidates the existing receipt by version. **Before the next training run:**
 4 → 4B → 0F → 0C → 6, once. That is the version gate working, not a setback.
 
@@ -224,7 +236,7 @@ These are argued in full in `paper/manuscript.md`; this is the index.
 | Finding | Where |
 | :--- | :--- |
 | F6: five of nine tools mis-declared; `submit_patch` takes **no arguments** while every trajectory sent one | §5.6 |
-| F2 fixed: preamble measures **1,110 tokens** (not the ~1,830 char/4 estimate, which overshot 65%) | §5.2, §4.4 |
+| F2: declarations absent by construction in runs 1–5; fail-open path in runs 6–7 **undetermined**. The "median 831 < preamble 1,110" argument was retracted 2026-11-11 (median was raw-JSON, preamble-free). Corrected renderer measures 1,110 tokens | §5.2, §4.4, §9.11 |
 | 26.0% of 1,933 tool calls were string-encoded; the rest dicts, same corpus | §5.4 |
 | Model-generated trajectories invented four `edit_file` schemas; ~30% unrepairable | §5.4, §4.2 |
 | **Two** RFT passes, both on 4 examples for ~28 s, both ending at ~2× the loss they overwrote | §5.3, §7.2 |

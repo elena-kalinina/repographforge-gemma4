@@ -78,11 +78,18 @@ Each gets a subsection: mechanism → the code → the signature → the fix →
 
 ## 4. One open question that changes F2's wording
 
-**RESOLVED 2026-11-10 (Cell 0C) — reading (a) is correct.** The preamble measures
-**1,110 tokens** against the real tokenizer, not the ~1,830 char/4 estimate used below.
-The median trajectory was 831 tokens, so at least half the training set was shorter than
-the preamble alone, which is impossible if it was present. The `tools=` render had been
-failing silently. F2 is now fixed: declarations render and appear in the text.
+**RE-RESOLVED 2026-11-11 — the 2026-11-10 answer below was wrong.** It argued the
+preamble (1,110 tokens, measured) was absent because the median trajectory was 831 tokens.
+That median was measured on raw message JSON, which never contains the preamble, so the
+comparison establishes nothing. Correct status: reading (a) holds **by construction** for
+runs 1–5 (the original code passed no `tools=` at all, DIAGNOSIS C2); for runs 6–7, which
+used the fail-open renderer, the question is **undetermined** — neither reading (a) nor
+(b) can be chosen from the records. Manuscript §5.2 now states it both ways, explicitly,
+with the retracted arithmetic named.
+
+Superseded 2026-11-10 wording, kept for the record: *"The median trajectory was 831
+tokens, so at least half the training set was shorter than the preamble alone, which is
+impossible if it was present. The `tools=` render had been failing silently."*
 
 Original wording, kept for the record:
 
