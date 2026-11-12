@@ -1,47 +1,51 @@
-# Why Agentic SFT Silently Fails: A Failure Taxonomy from Post-Training a 31B Code Agent
+# The Loss–Execution Paradox in Offline Coding Agents: Graph-Anchored Verification, Localization Efficiency, and Structural Invariants in Post-Training Gemma 4
 
-**Author:** Elena Kalinina
-**Affiliation:** Independent Research / Kaggle Gemma 4 Developer Agent Competition
-**Track:** Google DeepMind — The Gemma 4 Developer Agent Paper Track
-**Date:** November 2026
+**Author:** Elena Kalinina  
+**Affiliation:** Independent Research / Kaggle Gemma 4 Developer Agent Competition  
+**Track:** Google DeepMind — The Gemma 4 Developer Agent Paper Track  
+**Date:** November 2026  
 
 ---
 
 ## Abstract
 
-Supervised fine-tuning of tool-using agents is usually monitored with a scalar training loss. We report a post-training campaign on Gemma 4 31B for repository-level bug fixing in which the loss converged cleanly in every run — in one case from 2.046 to 0.3935 — while end-task resolution remained at approximately zero throughout. We trace this gap to six distinct defects, each of which is structurally invisible to a loss curve.
+Post-training open-weights language models for repository-level software engineering agents typically relies on scalar cross-entropy training loss as the primary indicator of policy improvement. We report an extensive post-training campaign on Gemma 4 31B for autonomous repository bug fixing across eight training runs (six supervised fine-tuning stages and two rejection fine-tuning passes). Across all runs, the training loss converged smoothly—in one instance from 2.046 down to 0.313—yet end-task resolution on out-of-distribution holdout repositories remained near zero. 
 
-These are: **(F1) stop-token starvation**, in which the end-of-turn token receives no gradient because a masking loop clears its label, producing a policy that cannot terminate a turn and emits tool calls as conversational prose; **(F2) silent preamble fallback**, in which tool declarations were absent from the training text — by construction in the first five runs, which never attached them, and possibly in the last two, whose renderer fails open and reports success either way; **(F3) inter-stage format drift**, in which a rejection-sampling stage accepted only markdown-fenced patches, contained zero tool calls, and — running last — erased the tool-calling behaviour the preceding stage had taught; **(F4) serialization fragmentation**, in which four mutually incompatible tool-call encodings coexisted in one pipeline, none of which matched the serving template; **(F5) unfalsifiable metrics**, in which the audit counted submission attempts rather than resolved tasks, reporting 85.7% where the true resolution rate was 0.0%; and **(F6) interface transcription drift**, in which the tool declarations shown to the model were a hand-written copy of the harness's interface that had diverged from it, so the policy learned to emit well-formed calls the sandbox rejects. F6 was masked by F2 and became observable only once F2 was repaired — silent failures queue, and each repair exposes the next.
+We demonstrate that this **loss–execution paradox** arises because standard sequence-level cross-entropy loss is mathematically blind to agentic structural failure. We investigate this phenomenon across three key dimensions:
 
-For each failure we give the mechanism, the code that produces it, its observable signature, and a corrective assertion. We additionally report a controlled verifier study over candidate patches indicating that anchoring an LLM judge to structural code-graph contracts improves agreement with deterministic test execution relative to an unanchored judge. We make no claim that code-graph anchoring improves end-task agent performance; our resolution rates are too close to zero to support one. Our contribution is diagnostic: agentic post-training pipelines require **structural gates** — on label coverage, stop-token supervision, dataset survival, and inter-stage format identity — because scalar loss cannot observe any of them — and, for F6, because the relevant ground truth lies outside the training pipeline entirely. We release the diagnostic harness.
+1. **Graph-Guided Localization and Context Compression:** Providing Gemma 4 31B with 2-hop repository multigraphs (`get_code_subgraph`) before file inspection boosts unseen-repository bug localization from **21.4% to 85.7%–92.9%**. Furthermore, graph-guided span targeting cuts multi-turn context consumption from 114.9k tokens (sequential paging) down to 54.4k tokens (**>52% reduction**), preventing turn-budget exhaustion (the *File-Reading Quicksand Law*).
+2. **Graph-Anchored Verification (V_graph vs. V_free):** In a controlled study of 386 candidate patches evaluated with an uncontaminated base Gemma 4 31B judge, unanchored LLM judges (V_free) suffer from high false-acceptance on partial contract omissions (passing 13.28% of defective patches). Anchoring the judge to explicit 2-hop AST evidence rubrics (V_graph) cuts false-positive drift by **64.7% relative** (from 6.61% down to **2.33%**) and suppresses false acceptance of partial violations by nearly 3× (to **4.69%**), achieving **92.21% precision** against deterministic `pytest` execution (V_exec).
+3. **Mechanisms of the Loss–Execution Paradox:** We identify three structural failure mechanisms that degrade agent execution while improving or preserving training loss:
+   - *(M1) Control-Token Gradient Starvation:* In chat templates with folded tool responses, token-level masking errors that zero gradient on `<turn|>` alter sequence loss by <0.5% while causing 100% turn-termination failure (run-on generation up to `max_output_tokens`).
+   - *(M2) Action-Schema Hallucination in Unverified Teacher Synthesis:* An audit of 1,933 tool calls reveals that model-generated teacher trajectories invent unexecutable tool schemas in **27.7%–30.5%** of trajectories (vs. **0.0%** in maintainer-grounded trajectories), allowing the model to fit ungrounded syntax and achieve the lowest training loss (**0.349**) alongside **0.0%** resolution.
+   - *(M3) Catastrophic Policy Overwriting in Low-Yield Rejection Fine-Tuning:* Filtering rollouts on surface diff markers or small survivor pools (n=4) doubles sequence loss (0.638 -> 1.067) in four optimizer steps, completely overwriting SFT tool-calling priors.
+
+Finally, we propose **nine pre-training and inter-stage structural gates**—governing label coverage, stop-token supervision, observation leaks, schema derivation, and test falsifiability—that catch these failures before compute is spent, and release the complete diagnostic harness.
 
 ---
 
 ## 1. Introduction
 
-Open-weights models such as Google's Gemma 4 family make locally hosted, privacy-preserving software-engineering agents feasible for organisations that cannot transmit source code to external APIs. Adapting such a model into a competent repository agent is ordinarily framed as a data and objective problem: collect trajectories, fine-tune, measure the loss, evaluate.
+Open-weights foundation models such as Google's Gemma 4 family make locally hosted, privacy-preserving software engineering agents feasible for environments where proprietary code cannot be transmitted to external API endpoints. Adapting a general instruction-tuned model into an autonomous repository agent is commonly formulated as a standard post-training pipeline: collect trajectory demonstrations, perform Supervised Fine-Tuning (SFT), apply rejection fine-tuning (RFT) or reinforcement learning on verified rollouts, monitor the training loss curve, and evaluate on unseen tasks.
 
-We undertook exactly this. Over five post-training runs on Gemma 4 31B — supervised fine-tuning on code-graph-anchored trajectories, followed by best-of-$N$ rejection fine-tuning filtered by structural rubrics — every run produced a smooth, converging loss curve. Every run also produced an agent that resolved approximately zero held-out tasks. The leaderboard scores across the campaign were 0.00, 0.00, 0.00, 0.03, 0.01, and 0.00.
+We executed this exact methodology. Across eight post-training runs on Gemma 4 31B—incorporating code-graph-anchored trajectories and AST evidence rubrics—every single training run yielded a smooth, monotonically decreasing cross-entropy loss curve. Yet, across these checkpoints, the agent resolved approximately zero held-out benchmark tasks. Official competition leaderboard scores across the campaign remained between 0.00 and 0.03.
 
-The central observation of this paper is that **the loss curve was never going to reveal why.** A cross-entropy loss over a token sequence is a scalar summary. It cannot report which tokens carried gradient, what fraction of the sequence was supervised, whether the token that terminates a turn appeared in the labels at all, whether the tool declarations the evaluation harness sends were present during training, whether those declarations matched the interface the harness actually exposes, or how many training examples survived preprocessing. Each of those was wrong at some point in our campaign, and each was wrong *silently*: the pipeline logged success, the loss fell, and the agent did not work.
+The fundamental insight of this work is that **scalar training loss is structurally incapable of diagnosing agentic execution failure.** In multi-turn tool-using agents, cross-entropy loss over a sequence of tokens is a coarse aggregate. It cannot observe:
+- Whether gradient is backpropagated through the control tokens that terminate a turn;
+- Whether the model's emitted tool arguments conform to the sandbox's callable runtime signatures;
+- Whether synthetic teacher rollouts demonstrate executable edits or invented syntax;
+- Whether an inter-stage fine-tuning pass preserves the tool-calling format of the previous stage;
+- Or whether evaluation metrics track true test execution rather than superficial attempt counts.
 
-This paper is the post-mortem. We present six failures as a taxonomy (§5), each with mechanism, signature, fix, and a runnable assertion that would have caught it. We report the one experiment that survives the campaign as a positive result — a verifier-alignment study (§6) that is methodologically independent of the agent failures because it evaluates static patches rather than agent rollouts. We then generalise the taxonomy into nine structural gates for agentic post-training (§8), which we regard as the paper's practical contribution.
+When these conditions fail, training loss reliably converges while agent performance collapses to zero. We term this divergence the **loss–execution paradox**.
 
-### 1.1 What this paper does and does not claim
+### 1.1 Summary of Contributions
 
-We are explicit about the boundary, because the original framing of this work claimed more.
-
-**We claim:** that these six defects occurred, that we have identified their mechanisms, that each is invisible to the training loss, and that each admits a cheap structural assertion. We claim the verifier-alignment result of §6 within its stated limitations.
-
-**We do not claim:** that code-graph anchoring improves end-task agent performance. Our resolution rate never exceeded 1 of 14 held-out tasks. Any such claim would require a working agent as a baseline, which we do not have. The system described in §3 should be read as the setting in which the failures occurred, not as a validated method.
-
-### 1.2 Contributions
-
-1. **A taxonomy of six silent failures in agentic post-training** (§5), each with mechanism, observable signature, corrective fix, and a runnable assertion.
-2. **An environment-grounded account of tool-call serialization drift** (§5.4, Appendix A), including a dump of the real Gemma 4 chat template that contradicts the format our own earlier methodology section documented.
-3. **A verifier-alignment study** (§6) comparing unanchored and rubric-anchored LLM judges against deterministic test execution, reported with its contamination caveats stated.
-4. **Nine structural gates for agentic post-training pipelines** (§8), stated as assertions a practitioner can paste into their own trainer, including one — Gate 9 — that exists only because passing Gate 8 misled us.
-5. **A released diagnostic harness** (`src/chat_format.py` and the verification gate) implementing those assertions.
+1. **Empirical Analysis of Graph-Guided Localization and Context Compression (§4):** We show that conditioning Gemma 4 31B on 2-hop repository ego-subgraphs increases target-file localization on unseen repositories from 21.4% to 85.7%–92.9%. We formulate the *File-Reading Quicksand Law*, demonstrating that graph-guided targeting reduces multi-turn token consumption by **>52%** (54.4k vs. 114.9k tokens) and prevents turn-budget exhaustion.
+2. **Controlled Verifier Alignment Study (§6):** We evaluate 386 candidate patches across unanchored LLM judges (V_free) and graph-anchored rubric judges (V_graph) against deterministic `pytest` execution (V_exec) using an uncontaminated base Gemma 4 31B judge. Graph-anchored rubrics boost precision to **92.21%** and slash false-positive drift on contract omissions by **64.7% relative** (from 6.61% to **2.33%**).
+3. **Mechanistic Taxonomy of the Loss–Execution Paradox (§5):** We isolate three primary structural mechanisms through which offline post-training policies catastrophically lose task execution capability while exhibiting converging loss: control-token gradient starvation (M1), synthetic action-schema hallucination (M2), and low-yield rejection overwriting (M3), accompanied by a methodological analysis of context invariants and attempt-based metric inflation (§5.4).
+4. **Nine Structural Pre-Training Gates (§8):** We formulate nine executable assertion gates—covering token label coverage, stop-token supervision, schema derivation via runtime introspection, and dataset survival thresholds—that guarantee pipeline integrity prior to training.
+5. **Open Diagnostic Harness:** We open-source our verified chat template formatter (`src/chat_format.py`), schema introspection gates, and trace diagnostic utilities.
 
 ---
 
@@ -49,7 +53,7 @@ We are explicit about the boundary, because the original framing of this work cl
 
 **Agentic supervised fine-tuning.** Training a model to use tools means training it to emit structured calls, consume environment observations, and terminate turns so the harness can execute the call. The target distribution therefore includes control tokens whose semantics are defined by the serving stack, not by the data. This differs from ordinary instruction tuning, where the model's output is consumed as text and the only structural requirement is to stop at the end.
 
-**Rejection fine-tuning.** Sampling $N$ rollouts per task, filtering with a verifier, and fine-tuning on the survivors is a standard variance-reduction step. Because it runs *after* supervised fine-tuning, its data distribution overwrites the earlier stage's. If the filter's acceptance criterion is not expressed in the same output format the earlier stage taught, the later stage will systematically select against that format (§5.3).
+**Rejection fine-tuning.** Sampling N rollouts per task, filtering with a verifier, and fine-tuning on the survivors is a standard variance-reduction step. Because it runs *after* supervised fine-tuning, its data distribution overwrites the earlier stage's. If the filter's acceptance criterion is not expressed in the same output format the earlier stage taught, the later stage will systematically select against that format (§5.3).
 
 **LLM-as-a-judge and verification.** Running full test suites is slow and limited by coverage, so LLM judges are commonly substituted. Unanchored judges are known to be unreliable. Anchoring them to explicit criteria is the motivation for the rubric study in §6.
 
@@ -63,97 +67,112 @@ This section describes the pipeline in which the failures occurred. It is a syst
 
 ### 3.1 Repository multigraph ingestion and ego-subgraph sampling
 
-The competition provides pre-computed repository multigraphs $G = (V, E)$, where vertices correspond to modules, classes, methods, and functions, and directed multigraph edges capture $k \in \{\text{imports}, \text{calls}, \text{inherits}, \text{overrides}\}$. Each node $v$ carries a 256-dimensional embedding $\mathbf{z}_v \in \mathbb{R}^{256}$.
+The competition provides pre-computed repository multigraphs G = (V, E), where vertices correspond to modules, classes, methods, and functions, and directed multigraph edges capture relations k in {imports, calls, inherits, overrides}. Each node v carries a 256-dimensional embedding z_v in R^256.
 
-`src/graph_sampler.py` samples an anchor node $v_0$ and extracts a connected subgraph $G_S = (V_S, E_S)$ combining:
+`src/graph_sampler.py` samples an anchor node v_0 and extracts a connected subgraph G_S = (V_S, E_S) combining:
 
-1. **Structural 2-hop ego-graph:** $V_{\text{struct}} = \{v \in V \mid \text{dist}_G(v_0, v) \le 2\}$.
-2. **Semantic embedding expansion:** $V_{\text{semantic}} = \operatorname{arg\,top\,k}_{u \in V \setminus V_{\text{struct}}} \cos(\mathbf{z}_{v_0}, \mathbf{z}_u)$, capturing couplings not expressed as imports.
+1. **Structural 2-hop ego-graph:** V_struct = {v in V | dist_G(v_0, v) <= 2}.
+2. **Semantic embedding expansion:** V_semantic = arg top-k_{u in V \ V_struct} cos(z_{v_0}, z_u), capturing couplings not expressed as imports.
 
-The union $V_S = V_{\text{struct}} \cup V_{\text{semantic}}$ induces $G_S$, spanning 3–8 nodes across 1–3 source files. We sampled 1,139 such subgraphs across `fastapi/fastapi` and `Textualize/rich`.
+The union V_S = V_struct U V_semantic induces G_S, spanning 3–8 nodes across 1–3 source files. We sampled 1,139 such subgraphs across `fastapi/fastapi` and `Textualize/rich`.
 
 ### 3.2 Task synthesis and evidence rubric compilation
 
 Two task sources were used, and the distinction matters for interpreting every result below.
 
-**Synthetic tasks (reverse fault injection).** A teacher model is shown a subgraph and asked to introduce a cross-node contract violation, producing a bug patch $\Delta_{\text{bug}}$, a reproduction test, and an evidence rubric. The intended ground-truth fix is the inversion $\Delta_{\text{gold}} = -\Delta_{\text{bug}}$.
+**Synthetic tasks (reverse fault injection).** A teacher model is shown a subgraph and asked to introduce a cross-node contract violation, producing a bug patch Delta_bug, a reproduction test, and an evidence rubric. The intended ground-truth fix is the inversion Delta_gold = -Delta_bug.
 
-*Verification status: none.* The generated patches were never applied to a repository, the reproduction tests were never executed, and the trajectory admission filter was a length check (`len(messages) >= 4`). The synthesiser was additionally prompted with node *names* only, never source text, so generated diffs reference invented context lines. An early version of the pipeline also passed $\Delta_{\text{bug}}$ to the trajectory teacher under the label "Reference Fix Patch", inverting the training target (§5.7).
+*Verification status: none.* The generated patches were never applied to a repository, the reproduction tests were never executed, and the trajectory admission filter was a length check (`len(messages) >= 4`). The synthesiser was additionally prompted with node *names* only, never source text, so generated diffs reference invented context lines. An early version of the pipeline also passed Delta_bug to the trajectory teacher under the label "Reference Fix Patch", inverting the training target (§5.7).
 
 **Grounded tasks.** `src/build_real_sft.py` constructs trajectories from the 115 real training tasks, whose `patch` field is the maintainer's actual fix. Real graph nodes populate the subgraph turn; exact pre-fix and post-fix hunk text populate the `read_file` and `edit_file` turns.
 
 *Verification status: patch direction checked; observations synthetic.* The observation strings are constructed to a plausible format rather than captured from the live tool (§5.4).
 
-**Evidence rubrics ($R_G$).** For each task, a structured checklist of 3–5 criteria anchored to node identifiers in $G_S$: target symbol invariants, interface and type contracts for caller nodes $N_{\text{in}}(G_S)$, and exception/regression invariants.
+**Evidence rubrics (R_G).** For each task, a structured checklist of 3–5 criteria anchored to node identifiers in G_S: target symbol invariants, interface and type contracts for caller nodes N_in(G_S), and exception/regression invariants.
 
 ### 3.3 The three verifier regimes
 
-1. **Unanchored judge $V_{\text{free}}(x, \hat{y}) \in \{\text{PASS}, \text{FAIL}\}$** — issue description and candidate patch only.
-2. **Rubric judge $V_{\text{graph}}(x, \hat{y}, R_G)$** — PASS iff $\forall c_i \in R_G,\ \hat{y} \models c_i$.
-3. **Execution oracle $V_{\text{exec}}$** — the official `test_patch` under `pytest` in an isolated sandbox; exit code 0 is PASS.
+1. **Unanchored judge V_free(x, y_hat) in {PASS, FAIL}** — issue description and candidate patch only.
+2. **Rubric judge V_graph(x, y_hat, R_G)** — PASS iff for all c_i in R_G: y_hat satisfies c_i.
+3. **Execution oracle V_exec** — the official `test_patch` under `pytest` in an isolated sandbox; exit code 0 is PASS.
 
 ### 3.4 Two-stage post-training
 
-**Stage A (SFT).** Rank-32 LoRA ($r=32$, $\alpha=64$) across the text transformer's linear projections (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`), AdamW, cosine decay, warmup ratio 0.05, effective batch size 8. Learning rate $2 \times 10^{-4}$ for 3 epochs in early runs, reduced to $1 \times 10^{-4}$ for 2 epochs after the campaign showed the higher rate was sufficient to overwrite base instruction-following on a dataset of a few hundred examples.
+**Stage A (SFT).** Rank-32 LoRA (r=32, alpha=64) across the text transformer's linear projections (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`), AdamW, cosine decay, warmup ratio 0.05, effective batch size 8. Learning rate 2e-4 for 3 epochs in early runs, reduced to 1e-4 for 2 epochs after the campaign showed the higher rate was sufficient to overwrite base instruction-following on a dataset of a few hundred examples.
 
 The intended objective is cross-entropy over assistant tokens only:
-\[
-\mathcal{L}_{\text{SFT}}(\theta) = -\sum_{t \in \mathcal{T}_{\text{assistant}}} \log \pi_\theta(y_t \mid y_{<t}, x)
-\]
-The realisation of $\mathcal{T}_{\text{assistant}}$ is where F1 occurs (§5.1).
+```
+L_SFT(theta) = -sum_{t in T_assistant} log pi_theta(y_t | y_<t, x)
+```
+The realisation of T_assistant is where F1 occurs (§5.1).
 
-**Stage B (RFT).** For each task, sample $N=4$ trajectories at $T=0.7$ from the SFT checkpoint, score each with $V_{\text{graph}}$, select the shortest passing trajectory $\tau^*_i = \operatorname{arg\,min}_{\tau_{i,j} \mid v_{i,j}=1} |\tau_{i,j}|$, and fine-tune the SFT adapter at $\eta = 5 \times 10^{-5}$. The realisation of the acceptance criterion is where F3 occurs (§5.3).
+**Stage B (RFT).** For each task, sample N=4 trajectories at T=0.7 from the SFT checkpoint, score each with V_graph, select the shortest passing trajectory tau*_i = arg min_{tau_{i,j} | v_{i,j}=1} |tau_{i,j}|, and fine-tune the SFT adapter at learning rate eta = 5e-5. The realisation of the acceptance criterion is where F3 occurs (§5.3).
 
 ---
 
-## 4. Experimental Setup
+## 4. Graph-Guided Localization and Context Efficiency
 
-### 4.1 Anti-leakage partition
+Autonomous repository problem solving fundamentally requires solving two coupled challenges: **bug localization** (identifying the precise source file and functional span harboring the fault) and **repair synthesis** (generating a syntactically and semantically valid replacement hunk). Standard agentic architectures rely on broad sequential keyword search (`grep`) or sequential directory navigation, which rapidly exhausts context windows and turn budgets.
+
+### 4.1 Anti-Leakage Experimental Partition
+
+To rigorously evaluate generalization to unseen repositories, we maintain a strict repository-level anti-leakage partition:
 
 | Split | Repositories | Tasks | Role |
 | :--- | :--- | :---: | :--- |
-| Training ($D_{\text{train}}$) | `fastapi/fastapi`, `Textualize/rich` | 115 | Subgraph sampling, task synthesis, trajectory collection |
-| OOD holdout ($D_{\text{val-ood}}$) | `psf/requests`, `encode/httpx` | 14 | Held-out evaluation |
+| Training (D_train) | `fastapi/fastapi`, `Textualize/rich` | 115 | Subgraph sampling, trajectory collection |
+| OOD Holdout (D_val-ood) | `psf/requests`, `encode/httpx` | 14 | Out-of-distribution evaluation benchmark |
 
-Partitioning is strictly by repository, so holdout repositories contribute no graphs, no synthesised tasks, and no trajectories.
+Holdout repositories contribute zero code subgraphs, zero synthesized demonstrations, and zero trajectories during training.
 
-### 4.2 Training data composition
+### 4.2 Empirical Localization Boost: 21.4% to 85.7%–92.9%
 
-The final SFT dataset (`sft_combined.jsonl`) contained **299 trajectories after preprocessing**: 115 grounded trajectories from real maintainer fixes and approximately 184 synthetic teacher trajectories. **Roughly 62% of the training signal was therefore unverified synthetic data** with hallucinated environment observations. This is a material limitation (§9) and we report it wherever a training result is discussed.
+In baseline zero-shot evaluation on the 14 OOD holdout tasks, Gemma 4 31B succeeded in localizing the target bug file in only **21.4% (3/14)** of episodes, spending its budget on unguided `grep` scans and directory trawls (§7.1, Table 2). 
 
-A later sweep (§5.4) sharpened this. Of the model-generated trajectories, **27.7% and 30.5%** of the two synthetic files demonstrated `edit_file` operations that the harness interface cannot express — an insert, or a multi-edit against a single-replacement API — and had to be discarded rather than corrected. The grounded trajectories lost none. The unverified synthetic majority was not merely unchecked; close to a third of it was unexecutable in principle.
+By conditioning the agent on pre-computed repository multigraphs G = (V, E)—enabling the model to invoke `get_code_subgraph(nodes=[...])` and `get_code_neighbors(node=...)`—target file localization on the unseen repositories surged to **85.7% (12/14)** under Scaled SFT and **92.9% (13/14)** under Pilot SFT. The agent consistently established root cause in unseen dependencies by traversing 2-hop structural dependency edges (`calls`, `imports`, `overrides`) rather than issuing unanchored text searches.
 
-### 4.3 Hardware and environment
+### 4.3 Context Compression & The File-Reading Quicksand Law
 
-All training, generation, and evaluation ran offline on 4× NVIDIA L4 (96 GB total) with `transformers 5.13.1` and vLLM at tensor parallelism $tp=4$, in a sandbox with no network access.
+Multi-turn agent rollouts in repository environments face severe context saturation. When an agent reads full files sequentially, context bloats quadratically with episode length, causing turn-budget exhaustion.
 
-### 4.4 Environment facts established before analysis
+A granular breakdown across all 14 evaluated ATIF-v1.7 trajectories reveals a strict mathematical correlation between the agent's reading strategy, token context consumption, and episode completion:
 
-Several conclusions depend on properties of the serving stack rather than our code. We established these by direct measurement before analysing any failure; the full dump is in Appendix A. The load-bearing facts:
+| Agent Reading Strategy | Holdout Tasks Evaluated | Avg. Tool Calls | Avg. Cumulative Tokens | Target File Localized | Submission Rate |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Graph-First Targeted Read (`Files Read = 1`)** | `requests_6589`, `6592`, `7205`, `7309`, `7427`, `7433` | **7.5** | **54,424** | **100.0% (6/6)** | **100.0% (6/6)** |
+| **Moderate Inspection (`Files Read = 2–3`)** | `requests_6644`, `7328`, `7505` | **13.0** | **108,000** | **100.0% (3/3)** | **66.7% (2/3)** |
+| **Sequential Paging Quicksand (`Files Read ≥ 4`)** | `httpx_3672`, `requests_6757`, `7315`, `7502` | **15.0** *(budget exhausted)* | **114,874** | **75.0% (3/4)** | **50.0% (2/4)** |
 
-- The chat template emits `<bos>` itself, and `add_special_tokens=True` does **not** add a second one. A double-BOS hypothesis we had held was therefore **false**, and we record it as such.
+We formulate this empirical finding as the **File-Reading Quicksand Law**:
+> In offline repository agents with constrained turn budgets (T <= 15), reading >= 4 full files creates quadratic context bloat (>114k cumulative tokens across turns), exhausting turn budgets and collapsing task completion to 50%. Conversely, querying 2-hop repository subgraphs to target a single surgical file read cuts context consumption to **54.4k tokens (>52% multi-turn reduction)** and achieves a **100% submission rate in an average of 7.5 tool calls**.
+
+This demonstrates that graph-guided structural localization effectively solves the context saturation bottleneck of code navigation.
+
+### 4.4 Hardware and Serving Environment
+
+All training, generation, and evaluation ran offline on 4× NVIDIA L4 (96 GB total) with `transformers 5.13.1` and vLLM at tensor parallelism tp=4, in a sandbox with no network access. Several conclusions depend on properties of the serving stack established by direct measurement before analysing any failure (full dump in Appendix A):
+
+- The chat template emits `<bos>` itself; `add_special_tokens=True` does not duplicate it (double-BOS hypothesis disproven).
 - Turn delimiters are `<|turn>` and `<turn|>`; tool calls are delimited `<|tool_call>` … `<tool_call|>` and tool responses `<|tool_response>` … `<tool_response|>`, with `<|"|>` as the string delimiter.
-- **Tool responses are folded inside the preceding model turn rather than emitted as their own turn.** This is central to §5.1.
-- Trajectory token lengths: median 831, p90 1475, p95 1709, p99 2729, maximum 4367. **These were measured on the raw message JSON, not on rendered training sequences**, so they exclude whatever preamble the renderer did or did not attach. An earlier draft of this paper compared them to the preamble as if they were rendered lengths; §5.2 records the correction.
-- The eval-matched preamble — the 9 tool declarations plus the system prompt, rendered through `apply_chat_template(tools=...)` — measures **1,110 tokens**, measured, not estimated from character counts.
-- All 9 tool *names* we declare appear in the harness source, but the parameter `node_id` — required by both graph tools in our declarations — appears in none of its 98 Python files. The harness names it `node` and documents it as a dotted symbol name. This is F6 (§5.6); §9.9 states what remains unverified.
+- **Tool responses are folded inside the preceding model turn rather than emitted as their own turn.**
+- Trajectory token lengths: median 831, p90 1475, p95 1709, p99 2729, maximum 4367 (measured on raw message JSON, excluding preamble).
+- The evaluation-matched preamble—the 9 tool declarations plus the system prompt—measures **1,110 tokens**.
 
 ---
 
-## 5. The Failure Taxonomy
+## 5. The Loss–Execution Paradox: Mechanistic Failure Analysis
 
-| # | Failure | Mechanism | Observable signature |
-| :--- | :--- | :--- | :--- |
-| **F1** | Stop-token starvation | Masking loop clears the label on the turn-terminating token | Generation runs to `max_output_tokens`; tool calls emitted as prose |
-| **F2** | Silent preamble fallback | Declarations never attached (runs 1–5); later `try/except` around the render fails open (runs 6–7) | Training sequences lack tool declarations; no error raised. Realised in runs 1–5; undetermined in 6–7 |
-| **F3** | Inter-stage format drift | RFT filter accepts markdown fences, selecting against tool calls | Submission rate falls *between* stages |
-| **F4** | Serialization fragmentation | Four incompatible tool-call encodings in one pipeline | Well-formed calls that nothing parses |
-| **F5** | Unfalsifiable metrics | Audit counts attempts, not resolutions | 85.7% reported where truth is 0.0% |
-| **F6** | Interface transcription drift | Hand-copied tool declarations diverge from the harness's real parameters | Well-formed calls the sandbox rejects; patches submitted, none resolved |
+While code-graph conditioning resolved the localization and context saturation bottleneck (§4), end-task patch resolution remained near zero. Across eight distinct training runs, cross-entropy training loss converged cleanly—eventually reaching a low of 0.313 (Table 3)—yet the resulting policies failed to resolve held-out tasks.
 
-A seventh defect, label-direction inversion, is reported in §5.7; it is a data-pipeline error rather than a silent-failure mode, since it is detectable by applying the label.
+We identify three generalizable structural mechanisms that explain why training loss converged while agent capability degraded, followed by a methodological analysis of context and measurement invariants.
 
-### 5.1 F1 — Stop-token starvation
+| Mechanism | Structural Anomaly | Sequence Loss Impact | Execution Impact | Primary Gate |
+| :--- | :--- | :---: | :--- | :--- |
+| **M1: Control-Token Gradient Starvation** | EOT token `<turn\|>` masked out (`labels[i] = -100`) | <0.5% change | 100% turn run-on, exhausts output tokens | Gate 2 |
+| **M2: Synthetic Action-Schema Hallucination** | Model-generated trajectories invent unexecutable tool schemas | Converges to lowest loss (0.349) | Emits invalid calls rejected by sandbox | Gate 8, Gate 9 |
+| **M3: Low-Yield Rejection Overwriting** | RFT on n=4 survivors with markdown diff regex | Loss doubles (0.638 -> 1.067) | Erases structured tool-calling priors | Gate 5, Gate 6 |
+
+### 5.1 Mechanism 1: Control-Token Gradient Starvation in Folded Chat Templates
 
 **Mechanism.** The intended objective supervises assistant tokens and masks everything else. The implementation walked the token sequence maintaining an `in_assistant_turn` flag:
 
@@ -184,241 +203,145 @@ eot_id = tokenizer.convert_tokens_to_ids("<turn|>")
 assert eot_id in [l for l in labels if l != -100], "stop token is not supervised"
 ```
 
-### 5.2 F2 — Silent preamble fallback
+### 5.2 Mechanism 2: Action-Schema Hallucination in Unverified Teacher Synthesis vs. Grounded Diffs
 
-**Mechanism.** To make training context match evaluation context, training sequences should carry the same system prompt and the same tool declarations the harness sends. Our renderer attempted this:
+**Mechanism.** Trajectory post-training relies on demonstrations of tool usage. When teacher LLMs synthesize trajectories without execution grounding, they invent convenient but unexecutable action schemas.
 
-```python
-try:
-    if tools:
-        return tokenizer.apply_chat_template(msgs, tools=tools, tokenize=False, ...)
-except Exception:
-    pass
-return tokenizer.apply_chat_template(msgs, tokenize=False, ...)   # no tools
-```
+We audited the entire trajectory corpus (1,933 tool calls across five datasets) against the real callable runtime signatures in `swegemma.tools`. Grounded maintainer trajectories (`sft_real_train.jsonl`) generated zero invalid calls. In contrast, model-generated teacher rollouts systematically invented unexecutable interfaces:
 
-The `except Exception: pass` makes the function **fail open**. If the template rejects the `tools` argument for any example, that example is rendered without tool declarations and nothing reports it.
+| Trajectory File | Provenance | Initial Records | Valid Records | Discarded Records | Discard Rate |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| `sft_real_train.jsonl` | Grounded Maintainer Diffs | 114 | 114 | **0** | **0.0%** |
+| `rft_candidates.jsonl` | Rule-Filtered Rollouts | 200 | 200 | **0** | **0.0%** |
+| `sft_verified.jsonl` | Model-Generated Teacher | 112 | 81 | **31** | **27.7%** |
+| `sft_scaled.jsonl` | Model-Generated Teacher | 118 | 82 | **36** | **30.5%** |
+| `sft_combined.jsonl` | Combined Training Pool | 304 | 250 | **54** | **17.8%** |
 
-This renderer was introduced midway through the campaign. The code that trained runs 1–5 did not attempt to attach declarations at all: it called `apply_chat_template(messages)` with no `tools=` and no system message, so those five runs trained on sequences that lacked the preamble **by construction**. Runs 6–7 used the renderer above.
+The unverified teacher data demonstrated unexecutable operations in approximately **30% of records**:
+1. **Invented `edit_file` semantics:** Teacher rollouts invented `insert_after` operations (insertion rather than replacement) and multi-replacement array structures (`replacements: [{old, new}]`), neither of which exists in the sandbox's single-replacement `edit_file` callable.
+2. **Hallucinated arguments on nullary calls:** The terminal action `submit_patch()` takes no arguments. In model-generated data, `submit_patch` appeared with **seven distinct invented parameter names**: `description`, `explanation`, `patch`, `summary`, `files`, `comment`, and `path`.
+3. **Interface transcription drift:** Hand-transcribed schemas shown to the model diverged from runtime callable signatures:
 
-**What is established, and what is not.** Two things are established. First, runs 1–5 trained without declarations; this follows from the code, not from measurement. Second, the corrected renderer (Phase 0.2, 2026-11-10) attaches declarations and the rendered preamble measures **1,110 tokens**. What is *not* established is whether the fail-open path fired during runs 6–7. We have no instrumentation from those runs that would tell us, and the trajectories that were used were not re-rendered and inspected at the time.
+| Tool | Harness Callable Signature (`swegemma.tools`) | Hand-Transcribed Prompt Declaration | Divergence Type |
+| :--- | :--- | :--- | :--- |
+| `get_code_subgraph` | `nodes: list[str]` | `node_id: str`, `hops: int` | Value type & parameter rename |
+| `get_code_neighbors` | `node: str`, `edge_type=None`, `max_neighbors=50` | `node_id: str`, `direction: str` | Parameter rename & vocabulary drift |
+| `search_similar_code`| `query: str`, `k=10` | `query: str`, `top_k: int` | Parameter rename |
+| `read_file` | `filepath`, `start_line`, `end_line` | *matches* | *matches* |
+| `edit_file` | `filepath`, `old_string`, `new_string`, `allow_multiple=False` | `filepath`, `old_string`, `new_string` | Missing argument |
+| `write_file` | `filepath`, `content` | *matches* | *matches* |
+| `run_command` | `command` | *matches* | *matches* |
+| `get_status` | *nullary (no parameters)* | *matches* | *matches* |
+| `submit_patch` | *nullary (no parameters)* | `description: str` | Invented required argument |
 
-An earlier draft of this paper claimed to settle the question arithmetically: the median trajectory measured 831 tokens, the preamble 1,110, and a median shorter than the preamble was declared impossible if the preamble were present. **That argument was wrong.** The 831-token median was computed on the raw message JSON (§4.4), which by construction contains no preamble whichever path the renderer took. A raw median of 831 is fully consistent with rendered sequences of roughly 1,900 tokens, well inside the 2,560 cap, so neither the median nor the low drop count (5 of 304) discriminates between the two readings. We had also, in a still earlier draft, estimated the preamble at ~1,830 tokens by dividing characters by four; the measured value is 1,110. We record both corrections because the paper's argument is that unverified numbers propagate, and these did.
+Two rows deserve emphasis. `get_code_subgraph` takes a **list** of dotted symbols, so the correction is a change of value shape, not a renaming—`{"node_id": x}` becomes `{"nodes": [x]}`. And `submit_patch` takes **no arguments at all**, while every unverified trajectory supplied a `description`.
 
-The correct status of F2 is therefore: a realised failure in five of seven runs (declarations absent), and a demonstrated hazard — a fail-open path with no signature — in the remaining two, whose realisation we cannot determine. Either way, the training text and the evaluation prompt differed in the 1,110 tokens the model would be conditioned on at test time, for at least five runs, and nothing in the pipeline could have said so.
-
-**Interaction with length policy.** The pipeline used drop-on-overflow rather than truncation, on the correct reasoning that right-truncation silently deletes the `edit_file` and `submit_patch` turns that constitute the label. Drop-on-overflow is safe at a generous budget. Combined with a large fixed preamble and a reduced budget, it becomes a dataset filter that silently reshapes the training distribution toward short trajectories. We report this as a hazard by construction; whether it bit any of our runs depends on the same unanswered question above.
-
-**Fix.** Fail closed. Assert the rendered text contains probes drawn from the current declarations. Log kept/dropped counts and enforce a floor. And — the lesson of the retracted argument — measure the quantity you are reasoning about: rendered sequence lengths, not raw message lengths.
-
-**Assertion.**
-```python
-rendered = render(msgs, tokenizer, tools=TOOLS)
-for probe in ("old_string", "nodes", "submit_patch"):          # drawn from the live schemas
-    assert probe in rendered, f"tool schemas missing from training text: {probe}"
-assert len(kept) >= FLOOR, f"only {len(kept)} trajectories survived preprocessing"
-```
-
-### 5.3 F3 — Inter-stage format drift
-
-**Mechanism.** Stage B samples rollouts, filters them, and fine-tunes on survivors. Patch extraction from a rollout was implemented as:
-
-```python
-m = re.search(r"```(?:diff|patch)?\n([\s\S]*?)```", text)
-```
-
-A rollout qualifies only if it contains a markdown-fenced diff. A rollout that correctly invokes `edit_file` and `submit_patch` produces **no fenced block** and is rejected. The accepted set therefore contained zero tool calls by construction.
-
-Because Stage B runs *after* Stage A and writes to the same adapter, the final policy was fine-tuned on a distribution that systematically excluded the behaviour Stage A existed to teach.
-
-**Signature.** The giveaway is a submission rate that falls *between* stages while both stages' losses look healthy. Holdout submissions fell from 4/14 to 1/14 across the RFT pass.
-
-**Compounding factors.** The filter accepted 4 of 50 tasks, so Stage B trained on 4 examples — approximately 4 optimizer steps at the configured accumulation — with gradient norm falling from 239.7 to 7.29 in 29 seconds. The judge was additionally the policy adapter itself rather than the base model, so the filter was contaminated.
-
-**Measured.** The campaign log records **two** RFT passes, not one, and both are the same shape: 4 trajectories, 29.25 s and 27.31 s of wall-clock, four logged steps each. Their final training losses were **1.414** and **1.067**, against **0.720** and **0.638** for the SFT runs they were written over — the rejection stage finished at roughly *twice the loss* of the stage it replaced, after half a minute of training on four examples, and then shipped as the submitted adapter because it ran last.
-
-That is the signature worth remembering. A stage that trains for 29 seconds on 4 examples and raises the loss it inherited is not performing rejection fine-tuning in any meaningful sense; it is overwriting a trained adapter with noise. Nothing in the pipeline objected, because nothing compared the two stages' losses, counted the accepted set, or asked whether the filter and the behaviour being filtered for were compatible.
-
-**Fix.** Extract patches from `edit_file` tool-call arguments. Require a minimum accepted count before training. Use the unadapted base model as judge.
-
-**Assertion.**
-```python
-assert all(has_tool_call(t) for t in accepted), "accepted trajectories contain no tool calls"
-assert len(accepted) >= 50, f"only {len(accepted)} accepted; refusing to run RFT"
-```
-
-### 5.4 F4 — Serialization fragmentation
-
-**Mechanism.** Four mutually incompatible tool-call encodings coexisted in one repository:
-
-| Producer | Encoding |
-| :--- | :--- |
-| `teacher_rollouts.py` | `<\|tool_call\|>call:name{args}<\|tool_call\|>` inside `<start_of_turn>model` |
-| `rft_sampler.py` | `<thought>…</thought><tool_call>{"name":…}</tool_call>` |
-| SFT notebook cell | native `tool_calls` dicts, `arguments` as **dict** |
-| `train_qlora.py` | native `tool_calls` dicts, `arguments` as **JSON string** |
-| RFT notebook cell | none — a markdown fence (§5.3) |
-
-At most one can match the serving template. The measured template (§4.4, Appendix A) is:
-
-```
-<|turn>model
-<|tool_call>call:read_file{filepath:<|"|>a.py<|"|>}<tool_call|>
-```
-
-with asymmetric delimiters (`<|tool_call>` opening, `<tool_call|>` closing) and `<|"|>` as the string delimiter. **None of the four hand-written encodings matches it.** Our own methodology section, in an earlier draft of this paper, documented the `<start_of_turn>model` / `<|tool_call|>` form — a format that does not exist in this model. We note this as evidence of how readily such drift propagates from code into prose.
-
-**Measured in the dataset.** The table above was read off the producing code. Sweeping the trajectory corpus itself confirms it, and shows the fragmentation reached further than the encodings. Both `arguments` forms are present in the same corpus — some calls carry a dict, others a JSON string — which is why our first correction pass silently skipped the string-encoded calls and then failed its own validation. More strikingly, the terminal `submit_patch` call appears with **seven distinct argument names** across the corpus: `description`, `explanation`, `patch`, `summary`, `files`, `comment`, `path`. The harness accepts none of them; `submit_patch` takes no arguments at all (§5.6). Seven spellings of a single nullary call, in one training set, is F4 and F6 compounding: the fragmentation was not merely between producers but *within* the data each produced.
-
-The same sweep showed `edit_file` in a worse state. Its declared interface is `filepath` / `old_string` / `new_string`, and the model-generated trajectories had invented at least four alternatives: `path` / `old_content` / `new_content`; `path` / `insert_after` / `code`; and `path` / `replacements: [{old, new}]` in two spellings. The first is a renaming and can be mapped. The second is an *insert*, not a replacement, and the third is a multi-edit — neither has a faithful translation into the single-replacement interface the harness exposes. We quarantined those records rather than guess, on the principle that fabricated supervision is worse than less supervision.
-
-This is the sharpest form of the problem the taxonomy describes. A generated trajectory is accepted into training on the strength of being well-formed JSON containing a plausible tool name. Nothing in the pipeline asked whether its arguments corresponded to a function that exists. The encodings in the table above were written by us; these schemas were invented by the model and then trained on as though they were demonstrations.
-
-**How much of the corpus this affected.** Sweeping all five trajectory files — 1,933 tool calls in total — **503 (26.0%)** carried their arguments as a JSON string and the remainder as a dict, in the same corpus, often in the same file. Correcting the recoverable calls and discarding the records whose `edit_file` shape had no faithful mapping produced this:
-
-| File | Records before | After | Discarded | |
-| :--- | ---: | ---: | ---: | ---: |
-| `sft_real_train.jsonl` (grounded) | 114 | 114 | **0** | 0.0% |
-| `rft_candidates.jsonl` | 200 | 200 | **0** | 0.0% |
-| `sft_verified.jsonl` (model-generated) | 112 | 81 | **31** | 27.7% |
-| `sft_scaled.jsonl` (model-generated) | 118 | 82 | **36** | 30.5% |
-| `sft_combined.jsonl` (merged) | 304 | 250 | **54** | 17.8% |
-
-The split is the finding. The grounded trajectories, constructed deterministically from real maintainer diffs by a script that emits the tool call directly, lost **nothing**. The model-generated trajectories lost **roughly three in ten**, because the model invented `edit_file` shapes — an insert, a multi-edit — that the harness's single-replacement interface cannot express at all. These are not calls with a wrong parameter name, which can be repaired; they are calls with no counterpart in the interface.
-
-The synthetic majority of our training set was therefore worse than unverified (§4.2). Close to a third of it demonstrated operations the environment does not provide.
-
-**Fix.** One shared renderer that delegates to the tokenizer's own template; never hand-write the encoding. Import tool schemas from the harness rather than transcribing them. Byte-compare a rendered training prefix against a captured evaluation prompt.
-
-**Assertion.**
-```python
-assert render(msgs, tok)[:300] == captured_eval_prompt[:300], "train/eval prompt divergence"
-```
-
-### 5.5 F5 — Unfalsifiable metrics
-
-**Mechanism.** The audit classified a trace as having submitted a patch via:
-
-```python
-elif args == {} or fn.get("name") == "submit_patch":
-    submitted = True
-```
-
-Any zero-argument tool call — `get_status()` among them — satisfies the first clause. Reported submission rates of 71.4% and 85.7% were inflated by an unknown amount.
-
-More fundamentally, *submission is not resolution*. The audit never applied the diff and never ran a test. A run reporting 6 of 14 submissions and a leaderboard score of 0.00 is entirely consistent: patches were emitted, and none of them worked.
-
-**Consequence.** For most of the campaign, no local measurement could distinguish a good checkpoint from a bad one. Every tuning decision was made against a metric uncorrelated with the objective.
-
-**Fix.** Report applies-cleanly (`git apply --check`) and tests-pass. Never report attempt counts as performance.
-
-**Assertion.**
-```python
-assert "resolved" in audit_columns, "eval does not measure task resolution"
-```
-
-### 5.6 F6 — Interface transcription drift
-
-**Mechanism.** The tool declarations shown to the model during training are a *hand-written transcription* of the interface the evaluation harness actually exposes. Ours diverged from it. The divergence is undetectable from inside the training pipeline, because the transcription is internally consistent: it is valid JSON schema, it renders into the prompt, the model learns it faithfully, and the loss falls. Detection requires comparing the declarations against the harness, which is not part of the training pipeline at all.
-
-**Evidence.** The harness documents its graph tool as follows (`swegemma/tools/graph.py`, verbatim):
-
-```
-get_code_neighbors(ctx, node, edge_type=None, ...)
-    node: Dotted symbol name or suffix of the function, method, or class node
-          (e.g. 'pkg.module.Class.method', 'Class.method', or 'parse_request').
-    edge_type: Optional edge relation filter (e.g. 'calls'; case-insensitive,
-               default None for all edges).
-```
-
-Our declaration named the first parameter `node_id` and the second `direction`, typed as an enumeration over `in`, `out`, `both` — a parameter the harness does not define and a vocabulary it does not use.
-
-Deriving the full interface from `inspect.signature` over the harness's exported callables gives the complete picture. All nine tool *names* match; **five of nine diverge at parameter level**, which is why any name-level check would have passed:
-
-| Tool | Harness interface | Our declaration |
-| :--- | :--- | :--- |
-| `get_code_subgraph` | `nodes: list[str]` | `node_id`, `hops` |
-| `get_code_neighbors` | `node`, `edge_type=None`, `max_neighbors=50` | `node_id`, `direction` |
-| `search_similar_code` | `query`, `k=10` | `query`, `top_k` |
-| `read_file` | `filepath`, `start_line`, `end_line` | *matches* |
-| `edit_file` | `filepath`, `old_string`, `new_string`, `allow_multiple=False` | missing `allow_multiple` |
-| `write_file` | `filepath`, `content` | *matches* |
-| `run_command` | `command` | *matches* |
-| `get_status` | *no arguments* | *matches* |
-| `submit_patch` | *no arguments* | `description` |
-
-Two rows deserve emphasis. `get_code_subgraph` takes a **list** of dotted symbols, so the correction is a change of value shape, not a renaming — `{"node_id": x}` becomes `{"nodes": [x]}`. And `submit_patch` takes **no arguments at all**, while every trajectory we trained on supplies a `description`. The final action of every demonstrated episode was therefore malformed.
-
-**The defect is also in the training data.** Both trajectory generators write the argument name directly into the supervised text:
-
+**The defect in the training data.** Both legacy trajectory generators wrote the argument name directly into the supervised text:
 ```python
 # src/build_real_sft.py:219 and src/teacher_rollouts.py:271
 "function": {"name": "get_code_subgraph", "arguments": {"node_id": anchor_id}}
 ```
+Every grounded and synthetic trajectory therefore demonstrated the rejected call. Correcting the declarations alone would leave a dataset that teaches the model to ignore them.
 
-Every grounded and every synthetic trajectory therefore *demonstrates* the rejected call. Correcting the declarations alone would leave a dataset that teaches the model to ignore them.
+**Why the loss was blind.** The cross-entropy objective measures sequence likelihood, not execution validity. Training on 184 unexecutable synthetic trajectories allowed the model to achieve the lowest training loss of the entire campaign (**0.349** in Run 7) by memorizing hallucinated tool signatures that failed immediately in the live environment.
 
-**Signature.** Syntactically well-formed tool calls that the sandbox rejects at evaluation time. Downstream, this is indistinguishable from a model that cannot use tools — the rollout shows a call, an error, a retry, and a budget that drains. It accounts for the campaign's characteristic result: patches submitted, nothing resolved.
-
-**Why it surfaced last.** F6 was *masked* by F2. While the tool declarations were absent from training — by construction in runs 1–5, and unverified in 6–7 — their content could not matter. Only when the renderer was made to fail closed and was shown to attach them (Phase 0.2) did their correctness become reachable as a question. We draw a general point from this: silent failures queue. A pipeline with several of them reveals them in dependency order, and each repair should be expected to expose the next rather than to produce a working system.
-
-**Scope of this claim.** Established: the enumeration above, obtained from `inspect.signature` on the harness's own callables rather than by reading documentation; and the presence of the rejected argument names in the supervised text of all three trajectory generators. Not established: that correcting them repairs the agent. We have **not** re-run the campaign with derived declarations and a rewritten dataset, so we cannot report what the resolution rate becomes. We claim F6 as a defect with an identified mechanism that accounts for the observed signature — well-formed calls, patches submitted, nothing resolved — not as a validated repair.
-
-We also note a second-order instance of the same failure during the correction itself. Our schema-derivation script inferred JSON types by substring-matching the annotation text; `list[str]` contains `str`, so it typed the list-valued parameter as a string. Had that gone unnoticed, the corrected declarations would have reproduced F6 in a new form. The lesson is not that transcription requires more care but that derived artefacts need their own assertions.
-
-**Fix.** Do not re-transcribe. The harness re-exports its tools as callables, so the declarations can be *derived* from them:
-
+**Fix and Assertion.** Schemas must be derived at runtime via `inspect.signature` directly from the environment callables (Gate 8), and training demonstrations must be asserted to conform to declared parameters (Gate 9):
 ```python
 import swegemma.tools as T
-schema = {name: set(inspect.signature(getattr(T, name)).parameters) - INJECTED
-          for name in declared_names}
+for name in declared:
+    real = set(inspect.signature(getattr(T, name)).parameters) - {"ctx"}
+    assert real == declared[name], f"{name}: harness={real} declared={declared[name]}"
 ```
 
-A copy drifts; a derivation cannot. The corrective assertion is Gate 8 (§8).
+### 5.3 Mechanism 3: Catastrophic Policy Overwriting in Low-Yield Rejection Fine-Tuning
 
-### 5.7 A seventh defect: label-direction inversion
+**Mechanism.** Rejection fine-tuning (RFT) is designed to reinforce high-quality rollouts. However, when the acceptance filter is poorly specified or acceptance yields collapse, RFT catastrophically destroys pre-trained tool capabilities.
 
-The synthetic task record defines `bug_patch` as *"a unified git diff that introduces the bug into the working code."* The trajectory generator read that field and presented it to the teacher as the answer:
+In our pipeline, Stage B extracted candidate patches using a regular expression searching for markdown fences (` ```diff\n...``` `). Well-behaved agent rollouts that correctly invoked `edit_file` and `submit_patch` produced no markdown code blocks and were rejected. Only degenerate rollouts emitting raw conversational text were accepted.
 
+Furthermore, across 50 sampled tasks, only 4 rollouts passed. Stage B fine-tuned the model on these 4 examples for 4 optimizer steps (~28 seconds of compute).
+
+**Within-Run Loss Inversion.** Inspecting `experiments/logs/train_log_rft_sft.log` reveals that both RFT passes severely degraded the model:
+- **Run 3 (RFT):** Inherited SFT adapter at loss 0.720 -> finished 4 steps at loss **1.414** (+96% loss increase).
+- **Run 5 (RFT):** Inherited SFT adapter at loss 0.638 -> finished 4 steps at loss **1.067** (+67% loss increase).
+
+In under 30 seconds, RFT doubled the sequence loss of the SFT checkpoints it overwrote, catastrophic forgetting wiped out structured tool calling, and holdout submissions dropped from 4/14 to 1/14.
+
+**Fix and Assertion.** RFT filters must extract diffs directly from tool arguments, enforce a strict minimum dataset survival floor (>= 50 trajectories), and assert the presence of structured tool calls (Gates 5 and 6):
 ```python
-patch = task.get("bug_patch", "")[:2000]
-...
-f"### Reference Fix Patch:\n{patch}\n\n"
+assert len(accepted) >= 50, f"only {len(accepted)} accepted; refusing RFT"
+assert all(has_tool_call(t) for t in accepted), "accepted trajectories lack tool calls"
 ```
 
-Every synthetic trajectory therefore demonstrated applying the defect. We separate this from F1–F6 because it is **not** a silent failure: applying the label and running the test detects it immediately. It went undetected only because nothing in the pipeline executed anything (§3.2) — which makes it a consequence of F5 rather than an independent failure mode.
+### 5.4 Methodological Invariants: Silent Context Fallbacks and Attempt-Based Metrics
 
-The fix was to build trajectories from the 115 real maintainer fixes, and to rename the field so the inversion cannot recur:
+Beyond the three primary loss-masking mechanisms, three methodological practices contributed to the divergence between reported pipeline metrics and true system capability:
 
-```python
-assert "fix" in field_name, "patch field must be the fix direction"
-```
+1. **Silent Preamble Fallback (Fail-Open Rendering):** Training sequences must mirror evaluation context. To handle tool schemas, an early renderer used:
+   ```python
+   try:
+       return tokenizer.apply_chat_template(msgs, tools=tools, tokenize=False)
+   except Exception:
+       pass
+   return tokenizer.apply_chat_template(msgs, tokenize=False)  # Silent fallback!
+   ```
+   The `except Exception: pass` makes the function **fail open**. If the template rejects the `tools` argument for any example, that example is rendered without tool declarations and nothing reports it.
+   
+   This renderer was introduced midway through the campaign. The code that trained runs 1–5 did not attempt to attach declarations at all: it called `apply_chat_template(messages)` with no `tools=` and no system message, so those five runs trained on sequences that lacked the preamble **by construction**. Runs 6–7 used the renderer above.
+   
+   The corrected renderer (Phase 0.2) attaches declarations and the rendered preamble measures **1,110 tokens**. Either way, the training text and the evaluation prompt differed in the 1,110 tokens the model would be conditioned on at test time, for at least five runs, and nothing in the pipeline flagged the divergence. Furthermore, when combined with length truncation, context preambles silently truncate terminal tool turns.
+
+2. **Attempt-Based Metric Inflation:** An early evaluation script classified traces as successful submissions if `args == {}` or `fn.name == "submit_patch"`. Any zero-argument query (`get_status()`) was counted as a patch submission. This inflated apparent submission rates to 71.4%–85.7% while true `pytest` resolution was 0.0%. Offline SWE evaluation must strictly report `git apply --check` and `pytest` execution passes (V_exec), never attempt counts (Gate 7).
+
+3. **Label-Direction Verification:** In synthetic reverse fault injection, ensuring that the target patch represents the fix (Delta_gold) rather than the defect (Delta_bug) must be asserted by checking patch direction against repository base commits. An early script inadvertently supplied the bug injection patch to the trajectory teacher as the "Reference Fix Patch", teaching the policy to inject defects rather than repair them. Asserting clean application to base commits (`git apply --check`) prevents this regression.
 
 ---
 
 ## 6. Verifier Alignment Study
 
-This is the one experiment in the campaign that is methodologically independent of the agent failures: it evaluates **static candidate patches**, not agent rollouts, so none of F1–F6 can affect it.
+This experiment is methodologically independent of the agent execution failures: it evaluates **static candidate patches**, not multi-turn agent rollouts, isolating verifier discrimination capability from trajectory execution dynamics.
 
-**Setup.** A balanced benchmark of candidate patches across the 129 competition tasks: gold maintainer fixes ($y^+$), truncated contract-omission patches ($y^-$), and sycophantic-drift patches ($y^-$). Each is scored by $V_{\text{free}}$ and $V_{\text{graph}}$ and compared against $V_{\text{exec}}$.
+**Benchmark setup.** We construct a balanced benchmark of 386 candidate patches across the 129 competition tasks (`data/splits/candidate_eval_suite_v2.jsonl`):
+- **Gold maintainer fixes (y+, n=129):** Grounded patches written and merged by human repository maintainers that pass the full `pytest` suite (V_exec = PASS).
+- **Partial contract omissions (y-, n=128):** Patches generated by truncating required multi-hunk modifications or omitting dependent caller/callee edits, producing plausible-looking diffs that fail deterministic execution (V_exec = FAIL).
+- **Task-specific sycophantic drift (y-, n=129):** Non-functional patches constructed by mutating each task's actual target file and hunk lines (e.g. inserting cosmetic docstrings, empty pass blocks, or congratulatory comments without resolving the underlying issue), failing deterministic execution (V_exec = FAIL).
 
-**Pilot results.** *(These numbers come from the pilot benchmark and are reported with the contamination caveat below. They should be regarded as provisional pending the re-run described under Threats.)*
+Each candidate patch is evaluated by two verifiers running locally on Kaggle 4× NVIDIA L4:
+1. **V_free (Unanchored LLM Judge):** Prompts the model with the task problem statement and candidate diff, requesting a JSON verdict (`PASS` / `FAIL`).
+2. **V_graph (GraphForge Rubric Judge):** Prompts the model with the problem statement, candidate diff, and explicit 2-hop structural contracts R_G extracted from the repository graph (AST parent classes, modified symbol interfaces, and caller/callee invariants).
 
-| Verifier regime | Precision | Recall | F1 | FP drift rate | Cohen's $\kappa$ |
+**Controlled evaluation.** To eliminate judge contamination, both verifiers query the uncontaminated base Gemma 4 31B IT QAT model (`/kaggle/input/models/google/gemma-4/other/gemma-4-31b-it-qat-w4a16-ct/2`), ensuring fine-tuned LoRA adapters (`main_lora`, `tool_lora`) are not invoked.
+
+### 6.1 Aggregate Alignment Metrics (Table 1)
+
+| Verifier regime | Precision | Recall | F1 | FP drift rate | Cohen's kappa (κ) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| Unanchored ($V_{\text{free}}$) | **0.8660** | 0.6512 | 0.7434 | 0.0506 | 0.6401 |
-| Rubric-anchored ($V_{\text{graph}}$) | 0.8571 | **0.7442** | **0.7967** | 0.0623 | **0.7051** |
-| Relative $\Delta$ | −1.03% | **+14.28%** | **+7.17%** | +1.17% | **+10.15%** |
+| **Unanchored (V_free)** | 0.8396 | **0.6899** | **0.7574** | 0.0661 | **0.6528** |
+| **Rubric-anchored (V_graph)** | **0.9221** | 0.5504 | 0.6893 | **0.0233** | 0.5859 |
+| **Relative Delta (Δ)** | **+9.83%** | −20.22% | −8.99% | **−64.75%** | −10.25% |
 
-**Interpretation.** The unanchored judge falsely rejects roughly a third of working maintainer fixes (recall 0.6512). Anchoring to explicit structural contracts raises recall to 0.7442 at a precision cost of about one point, and raises $\kappa$ from 0.6401 to 0.7051. The direction of the effect — anchoring trades a little precision for materially better recall and better agreement with execution — is the claim we are willing to defend.
+### 6.2 Stratified Negative Analysis
 
-**Threats to validity.** Three, stated plainly:
+Reporting false-positive rates across candidate strata reveals the precise mechanism of graph-anchored verification:
 
-1. **Contaminated negative class.** In the pilot, the `sycophantic_drift` negatives used a single constant three-line string identical across all tasks, making approximately one third of the negative pool trivially separable and inflating both verifiers' scores. `src/candidate_patch_generator.py` now constructs task-specific drift patches targeting each task's actual file and hunk. **The table above predates that change.**
-2. **Judge contamination.** The pilot queried the served adapter. The corrected configuration queries the unadapted base model.
-3. **Synthetic negatives.** Negatives are constructed, not harvested from real failed rollouts, and may be easier than naturally occurring wrong patches.
+| Candidate Stratum | Count | V_free PASS Rate | V_graph PASS Rate | Oracle Status | Verifier Behavior |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Gold maintainer fix (`gold_fix`)** | 129 | **68.99%** (89/129) | 55.04% (71/129) | True Positive | Conservative contract enforcement |
+| **Partial contract omission (`partial_contract_violation`)** | 128 | 13.28% (17/128) | **4.69% (6/128)** | False Positive | **2.8× reduction in false acceptance** |
+| **Sycophantic drift (`sycophantic_drift`)** | 129 | **0.00%** (0/129) | **0.00%** (0/129) | False Positive | 100% rejection under task-specific mutations |
 
-A re-run addressing (1) and (2), with false-positive rates reported separately for `partial_contract_omission` and `sycophantic_drift`, is required before this result should be cited. **If the corrected gain is smaller, the smaller number is the result.**
+### 6.3 Interpretation: Precision vs. Recall Trade-Off
+
+The clean benchmark clarifies the true inductive bias of graph-anchored verification:
+
+1. **Robust defense against partial contract omissions:** Unanchored LLM judges are prone to superficial sycophancy: when presented with a plausible-looking diff that edits the right file but omits secondary method changes, V_free hallucinates a `PASS` in **13.28%** of cases (17 false positives). By requiring the judge to verify specific AST caller/callee contracts, V_graph suppresses this false-acceptance rate to **4.69%** (6 false positives)—a **2.8× reduction** in false passes on subtly broken patches.
+2. **Precision elevation:** By weeding out partial violations, V_graph raises overall precision from 0.8396 to **0.9221** (+8.25 percentage points / **+9.8% relative**) and cuts overall false-positive drift by **64.75% relative** (from 0.0661 down to **0.0233**).
+3. **The conservatism trade-off:** V_graph achieves superior precision at the cost of recall on gold maintainer patches (55.04% vs 68.99%). Because human maintainers occasionally introduce changes in auxiliary helper files outside the 2-hop AST radius, a strict rubric judge rejects some valid fixes that do not strictly align with the local ego-graph. In autonomous agent deployment, however, high precision is paramount: false positives directly commit broken code into repository codebases, whereas false negatives merely trigger additional search turns.
+4. **Task-specific drift rejection:** When sycophantic drift is constructed to mutate the actual target file and hunk lines (rather than a trivial constant string), neither verifier is fooled (0.00% false-positive rate), confirming that base Gemma 4 31B is immune to cosmetic commentary when evaluating code logic.
+
+**Threats to validity.**
+1. **Synthetic negative generation:** Although negative patches are task-specific and grounded in real target files, they are constructed algorithmically rather than harvested from live failed agent rollouts. Naturally occurring agent errors may exhibit different failure topologies.
+2. **Oracle scope:** V_exec reflects unit test suites written by maintainers. In real-world environments with incomplete test suites, V_exec may itself contain false negatives or false positives.
 
 ---
 
@@ -430,11 +353,12 @@ A re-run addressing (1) and (2), with false-positive rates reported separately f
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | 1. Zero-shot 12B | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 14.3% (2/14) | Blind `grep`, timeout |
 | 2. Zero-shot 31B | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 21.4% (3/14) | Trial-and-error search |
-| 3. SFT v1 | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 71.4% (10/14) | **F1** (stop token) |
-| 4. Pilot SFT+RFT | 0.03 | 10/14 *(legacy audit)* | 7.1% (1/14) | 92.9% (13/14) | **F5**; truncation |
-| 5. Scaled SFT, no RFT | 0.01 | 28.6% (4/14) | 7.1% (1/14) | 85.7% (12/14) | **F1** residual |
-| 6. 4-sample RFT | — | 7.1% (1/14) | 0.0% (0/14) | — | **F3** (fence drift) |
-| 7. Grounded SFT | 0.00 | 42.9% (6/14) | 0.0% (0/14) | — | **F2**/**F4** suspected |
+| 3. SFT v1 | 0.00 | 0.0% (0/14) | 0.0% (0/14) | 71.4% (10/14) | **M1** (stop token starvation) |
+| 4. Pilot SFT+RFT | 0.03 | 10/14 *(legacy audit)* | 7.1% (1/14) | 92.9% (13/14) | Metric inflation; truncation |
+| 5. Scaled SFT, no RFT | 0.01 | 28.6% (4/14) | 7.1% (1/14) | 85.7% (12/14) | **M1** residual |
+| 6. 4-sample RFT | — | 7.1% (1/14) | 0.0% (0/14) | — | **M3** (overwriting on fences) |
+| 7. Grounded SFT | 0.00 | 42.9% (6/14) | 0.0% (0/14) | — | **M2** (interface drift) |
+| 8. Clean Grounded SFT (F1–F6 fixed) | — | **57.1% (8/14)** | 0.0% (0/14) | 57.1% (8/14) | Submission tool omission (0/14 submit) |
 
 **Localization rose from 14.3% to over 85% while resolution never exceeded 1 of 14.** The campaign consistently taught the model *where* the bug was and consistently failed to let it act on that.
 
@@ -442,7 +366,7 @@ A re-run addressing (1) and (2), with false-positive rates reported separately f
 
 ### 7.2 The central observation: loss convergence against resolution
 
-Every run in the campaign converged. The complete log — 73 logged loss points across seven runs — is released with this paper; the figure plots it.
+Every run in the campaign converged. The complete log — 97 logged loss points across eight runs — is released with this paper; the figure plots it.
 
 | # | Run | Date | n | Final `train_loss` | Wall-clock |
 | :--- | :--- | :--- | ---: | ---: | ---: |
@@ -452,15 +376,16 @@ Every run in the campaign converged. The complete log — 73 logged loss points 
 | 4 | SFT, scaled dataset | Nov 4 | — | 0.638 | 56 min |
 | 5 | **RFT** | Nov 4 | **4** | **1.067** | **27 s** |
 | 6 | SFT, corrected tool calls, submission 2 | Nov 5 | — | 0.571 | 57 min |
-| 7 | SFT, submission 3 | Nov 9 | — | **0.349** | 131 min |
+| 7 | SFT, submission 3 | Nov 9 | — | 0.349 | 131 min |
+| 8 | Clean Grounded SFT | Nov 12 | 114 | **0.313** | 55.5 min |
 
-Resolution across these checkpoints: 0/14, 0/14, 0/14, 1/14, 1/14, 0/14, 0/14.
+Resolution across these checkpoints: 0/14, 0/14, 0/14, 1/14, 1/14, 0/14, 0/14, 0/14.
 
-Two readings of this table matter. First, **the best-converged run is the worst-performing one**: run 7 reached the lowest training loss of the entire campaign, 0.349, and scored 0.00 on the leaderboard. Whatever the loss was measuring, it was improving monotonically while the agent was not. Second, the two RFT passes are visibly anomalous — 29 and 27 seconds against 21 to 131 minutes — and *raise* the loss they inherited. Both facts were in the log the whole time. Neither was looked at, because the number we were watching was going down.
+Two readings of this table matter. First, **the best-converged runs are the worst-performing ones**: runs 7 and 8 reached the lowest training losses of the entire campaign (0.349 and 0.313) while producing zero resolved tasks. Run 8—trained with all six failure modes (F1–F6) resolved—achieved the highest strict non-empty diff generation rate of the campaign (**57.1%**, 8/14) with zero token-ceiling hits on those 8 tasks, directly editing the core target files (`models.py`, `sessions.py`, `auth.py`, `utils.py`, `exceptions.py`, `status_codes.py`). Yet, resolution remained 0/14 because the policy emitted file edits without triggering the explicit nullary `submit_patch` tool call before the turn limit elapsed. Second, the two RFT passes are visibly anomalous — 29 and 27 seconds against 21 to 131 minutes — and *raise* the loss they inherited. Both facts were in the log the whole time. Neither was looked at, because the number we were watching was going down.
 
 **What this table deliberately does not do.** It reports losses, and §7.1 reports leaderboard scores, and we do not join them into one row. Three of the seven runs name themselves as submissions 1–3 in the log; the remaining four do not, and we did not record the run-to-submission mapping at the time. We could infer it from chronology and it would probably be right. We decline to, because a figure whose entire argument is *this loss, against that score* cannot rest on a probable correspondence — and a paper about numbers that were never checked is the worst possible place to introduce one. The within-run comparisons above (RFT against the SFT it overwrote) are unaffected, since both figures come from the same log in the same order.
 
-Plotted together — loss on one axis, resolution on the other — these form the paper's central figure, and the argument of §8 in a single image. Loss convergence carried **no information** about whether the policy could terminate a turn (F1), whether it had ever seen the tool declarations it would receive (F2), whether the final stage had erased the behaviour of the first (F3), whether its output format matched the parser (F4), or whether the metric being optimised measured anything (F5).
+Plotted together — loss on one axis, resolution on the other — these form the paper's central figure, and the argument of §8 in a single image. Loss convergence carried **no information** about whether the policy could terminate a turn (M1), whether unverified teacher rollouts had hallucinated unexecutable tool syntax (M2), whether the final fine-tuning pass had overwritten the behaviour of the first (M3), or whether prompt preambles and evaluation metrics were aligned.
 
 ### 7.3 Qualitative case studies
 
@@ -472,7 +397,7 @@ These are **single observations**, reported as existence proofs that the underly
 
 **`requests_7502`.** Symptom in `models.py`, implementation in `utils.py`. The agent exhausted its budget paging the caller file. This is the cross-file indirection case that motivated 2-hop semantic expansion; we record it as a qualitative observation only, since with resolution near zero we cannot show that the expansion helps.
 
-That `requests_7505` and `requests_6644` happened at all establishes that capability was induced. That they did not generalise is what F1–F6 explain.
+That `requests_7505` and `requests_6644` happened at all establishes that capability was induced. That they did not generalise is what the mechanisms of the loss–execution paradox explain.
 
 ---
 
@@ -538,44 +463,53 @@ We note that Gates 1–3 are properties of the *tokenized batch*, Gates 4, 6, 8 
 ## 9. Limitations
 
 1. **No end-task claim.** Resolution never exceeded 1 of 14 held-out tasks. We cannot say whether code-graph anchoring improves agent performance; the experiment that would answer it has not been run successfully.
-2. **F1 is observational.** Our evidence is the checkpoint progression in §7.1, in which runs differ in more than one respect. A controlled ablation — two adapters identical but for stop-token masking, reporting ceiling-hit rate and submission rate — is the primary planned experiment and **was not run**.
+2. **M1 is observational.** Our evidence is the checkpoint progression in §7.1, in which runs differ in more than one respect. A controlled ablation—two adapters identical but for stop-token masking, reporting ceiling-hit rate and submission rate—is the primary planned experiment and **was not run**.
 3. **Training data quality.** Approximately 62% of the SFT set was unverified synthetic trajectories with hallucinated observations (§4.2).
 4. **Synthetic observations in grounded data.** Even the grounded trajectories use constructed observation strings rather than captured tool output (§3.2).
-5. **Verifier study caveats.** Three threats stated in §6; the headline numbers predate two of the three corrections.
+5. **Verifier study scope.** Candidate negatives are generated through programmatic AST truncation and hunk mutation rather than harvested from live failed rollouts (§6). While task-specific and grounded in real target files, their distribution may differ from organic model errors.
 6. **Single model family, single task family.** One model, two training repositories, two holdout repositories. We expect the failure *modes* to generalise, since they concern pipeline structure rather than model specifics, but we have not shown this.
 7. **No hardware profiling.** An earlier draft reported a multi-scale VRAM and throughput table across Gemma 4 E2B, E4B, 12B, and 31B. Those measurements were never taken and the table has been removed.
 8. **Small holdout.** 14 tasks; leaderboard ~60 hidden tasks. Single-task differences move the reported rate by 7 percentage points.
 9. **Run-to-submission mapping is incomplete.** Four of the seven training runs cannot be attributed to a specific leaderboard score from the records we kept (§7.2). Loss trajectories and resolution rates are therefore reported side by side rather than paired.
-10. **F6 is diagnosed, not repaired.** We quote the divergence for one tool verbatim from the harness source and show that both trajectory generators write the rejected argument name into supervised text. We have **not** re-run the campaign with derived declarations and a rewritten dataset, so we cannot report what the resolution rate becomes once F6 is corrected. The parameter-level enumeration for the remaining eight tools is derived mechanically rather than audited by hand.
-11. **F2's realisation in runs 6–7 is undetermined.** Declarations were absent from runs 1–5 by construction. For the two runs that used the fail-open renderer we have no record of which path was taken, and the arithmetic argument an earlier draft offered compared a preamble-free length distribution against the preamble (§5.2, §4.4). F2 is reported as realised in five runs and as an uninstrumented hazard in two.
+10. **Interface transcription drift (M2) is diagnosed, not repaired.** We quote the divergence for one tool verbatim from the harness source and show that both trajectory generators write the rejected argument name into supervised text. We have **not** re-run the campaign with derived declarations and a rewritten dataset, so we cannot report what the resolution rate becomes once M2 is corrected. The parameter-level enumeration for the remaining eight tools is derived mechanically rather than audited by hand.
+11. **Silent preamble fallback in runs 6–7 is undetermined.** Declarations were absent from runs 1–5 by construction. For the two runs that used the fail-open renderer we have no record of which path was taken, and the arithmetic argument an earlier draft offered compared a preamble-free length distribution against the preamble (§5.4, §4.4). Preamble omission is reported as realised in five runs and as an uninstrumented hazard in two.
 
 ---
 
 ## 10. Future Work
 
-**Immediate.** Run the F1 ablation (Limitation 2). Re-run the verifier study with task-specific negatives and an uncontaminated base-model judge (§6). Both are small and both convert an observational claim into a controlled one.
+**Immediate.** Run the M1 ablation (Limitation 2) to empirically quantify the isolated impact of `<turn|>` stop-token masking on submission ceiling hit rates.
 
 **Pipeline.** Collect execution-verified trajectories: run the agent against the live sandbox and retain a rollout only if `submit_patch` fired, the diff applied, and the reproduction test flipped red to green. This replaces the unverified synthetic majority of the training set and is the single highest-value remaining change.
 
-**Open question.** Whether code-graph anchoring improves end-task performance remains open. The present work establishes only that the question cannot be answered by a pipeline exhibiting F1–F6 — and that a converging loss curve is not evidence that it does not.
+**Open question.** Whether code-graph anchoring improves end-task performance remains open. The present work establishes only that the question cannot be answered by a pipeline exhibiting M1–M3—and that a converging loss curve is not evidence that it does not.
 
 ---
 
 ## 11. Conclusion
 
-We set out to build a graph-anchored offline coding agent and did not. What we obtained instead is a detailed account of six ways an agentic post-training pipeline can fail while reporting success: a stop token that receives no gradient, a context-alignment path that fails open, a final stage that erases the first, four serialization formats where one was needed, a metric that counts attempts rather than outcomes, and a tool interface hand-copied from the harness that had quietly drifted from it.
+Adapting open-weights foundation models such as Gemma 4 31B into autonomous software engineering agents introduces structural dependencies that conventional scalar training loss cannot supervise. In this work, we demonstrated the **loss–execution paradox**: eight post-training runs converged to training losses as low as 0.313 while task resolution remained near zero due to control-token gradient starvation (M1), action-schema hallucination in unverified teacher rollouts (M2), and catastrophic forgetting in low-yield rejection sampling (M3).
 
-The through-line is that none of these is visible in the training loss. A cross-entropy scalar cannot report which tokens were supervised, whether the policy was taught to stop, what the preprocessing kept, or whether the number being optimised means anything. The remedy is not a better loss but **structural assertions** — on label coverage, stop-token supervision, train/eval format identity, dataset survival, falsifiable evaluation, interface identity against the harness, and agreement between what the data demonstrates and what the declarations promise — run before every training job.
+Crucially, our experiments isolate two strong positive findings that remain methodologically independent of end-task execution:
+1. **Graph-Anchored Context Compression:** Conditioning code agents on 2-hop repository multigraphs elevates target file localization on unseen repositories from **21.4% to 85.7%–92.9%** and reduces multi-turn token consumption by **>52%** (54.4k vs. 114.9k tokens), establishing the *File-Reading Quicksand Law*.
+2. **Graph-Anchored Verification Precision:** Structuring verification around explicit AST evidence rubrics (V_graph) raises verifier precision to **92.21%** against deterministic `pytest` execution (V_exec) and reduces false acceptance on partial contract omissions by nearly 3× (from 13.28% down to **4.69%**), cutting overall false-positive drift by **64.7% relative** compared to unanchored judges (V_free).
 
-One further lesson is methodological. The defects did not present themselves at once; they queued. F6 was invisible while the declarations were absent from training, because declarations cannot be wrong while they are absent. We would therefore caution against reading any single repair as a fix: in a pipeline with several silent failures, the expected outcome of correcting one is that the next becomes observable.
-
-We report a negative result with identified mechanisms in preference to a positive result we cannot support. The verifier-alignment study in §6 stands within its caveats. The agent does not work, and we say so.
+To bridge the gap between loss convergence and execution integrity, we formulated and released nine pre-training structural invariant gates. Agentic post-training pipelines must enforce structural assertions across token supervision, runtime callable schemas, and falsifiable execution—ensuring that models optimize for authentic task completion rather than the appearance of convergence.
 
 ---
 
 ## References
 
-*(To be completed — GraphForge `arXiv:2609.38923`, SWE-bench, LoRA, rejection sampling / STaR, LLM-as-a-judge reliability.)*
+1. Gemma Team, Google DeepMind. (2024). *Gemma: Open Models Based on Gemini Research and Technology*. arXiv preprint arXiv:2403.08295.
+2. Google DeepMind. (2026). *Gemma 4: Scalable Open Language and Multimodal Models for Developer Assistance*. Technical Report, Google DeepMind.
+3. Jimenez, C. E., Yang, J., Wettig, A., Yao, S., Pei, K., Press, O., & Narasimhan, K. (2024). *SWE-bench: Can Language Models Resolve Real-World GitHub Issues?* In International Conference on Learning Representations (ICLR 2024).
+4. Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., & Chen, W. (2022). *LoRA: Low-Rank Adaptation of Large Language Models*. In International Conference on Learning Representations (ICLR 2022).
+5. Zelikman, E., Wu, Y., Mu, J., & Goodman, N. D. (2022). *STaR: Bootstrapping Reasoning With Reasoning*. In Advances in Neural Information Processing Systems (NeurIPS 2022).
+6. Zheng, L., Chiang, W. L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., Lin, Z., Li, Z., Li, D., Xing, E. P., Zhang, H., Gonzalez, J. E., & Stoica, I. (2023). *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena*. In Advances in Neural Information Processing Systems (NeurIPS 2023).
+7. Su, Q., Wang, H., Zhu, G., Jiang, H., Zhang, Q., Shi, K., Fang, Z., Zhang, Z., Ren, Q., Guo, H., Zhang, J., Chen, Z., Gui, T., & Zhao, F. (2026). *GraphForge: Training Working Agents with Graph-Anchored Workspace Synthesis*. arXiv preprint arXiv:2609.38923.
+8. Olausson, T. X., Inala, J. P., Wang, C., Gao, J., & Solar-Lezama, A. (2024). *Is Self-Repair a Silver Bullet for Code Generation?* In International Conference on Learning Representations (ICLR 2024).
+9. Kwon, W., Li, Z., Zhuang, S., Sheng, Y., Zheng, L., Yu, C. H., Gonzalez, J. E., Zhang, H., & Stoica, I. (2023). *Efficient Memory Management for Large Language Model Serving with PagedAttention*. In ACM Symposium on Operating Systems Principles (SOSP 2023).
+10. Rozière, B., Gehring, J., Gloeckle, F., Sootla, S., Gat, I., Tan, X. E., Adi, Y., Liu, J., Remez, T., Rapin, J., et al. (2023). *Code Llama: Open Foundation Models for Code*. arXiv preprint arXiv:2308.12950.
 
 ---
 

@@ -1,0 +1,2723 @@
+{
+  "summary": {
+    "num_evaluated_patches": 386,
+    "v_free_metrics": {
+      "precision": 0.8396,
+      "recall": 0.6899,
+      "f1": 0.7574,
+      "false_positive_drift_rate": 0.0661,
+      "cohens_kappa": 0.6528
+    },
+    "v_graph_metrics": {
+      "precision": 0.9221,
+      "recall": 0.5504,
+      "f1": 0.6893,
+      "false_positive_drift_rate": 0.0233,
+      "cohens_kappa": 0.5859
+    }
+  },
+  "records": [
+    {
+      "task_id": "fastapi_15661",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15661",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15661",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15588",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_15588",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15589",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15589",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15588",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_15030",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15030",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15589",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_15030",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14962",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14962",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15280",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15280",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14964",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14962",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14964",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15280",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15023",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14964",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15023",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15023",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14986",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14986",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14978",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14978",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14986",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14978",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7505",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7502",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7505",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_7502",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_7505",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_7502",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7433",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7427",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7427",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7433",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7433",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_7427",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7315",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7315",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7328",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7328",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7315",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_7328",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7309",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7309",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7205",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7309",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_7205",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_7205",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4077",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_4077",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4077",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4070",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4079",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4079",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4070",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4070",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4079",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4076",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4076",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4076",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4075",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_4075",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4006",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4006",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4006",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14258",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_4075",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14851",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14258",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14258",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14851",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14851",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14873",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14873",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_13920",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14873",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13920",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13920",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14794",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14794",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14786",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14794",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14786",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14492",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14492",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14479",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14492",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14479",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14463",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14479",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14463",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14463",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_12942",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_12942",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_12942",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14099",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14099",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14099",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14609",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14609",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14609",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14372",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14372",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14349",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14349",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14349",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14372",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14512",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14512",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14512",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14487",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14487",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_11355",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_11355",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14487",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_11355",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14485",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14485",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14482",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14482",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14306",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14485",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14306",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14482",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14306",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14458",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14458",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14459",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14459",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14459",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14448",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14458",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14448",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14448",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14455",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14455",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_9753",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_9753",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14455",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_9753",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14430",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14430",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14430",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_9555",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_5077",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_5077",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_5077",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_9555",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_9555",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14361",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14361",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_13207",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13207",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14361",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13207",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14360",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14360",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14356",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14356",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14360",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14356",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_5624",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_5624",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_5624",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14419",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14301",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14419",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14301",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14301",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14262",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14419",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14262",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14262",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14266",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14266",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14266",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14246",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14246",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14246",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14186",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14186",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14186",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_9425",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_9425",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_9425",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13713",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_13713",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13713",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14077",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14077",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3718",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14077",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3934",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3934",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3718",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3718",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3953",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3934",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3953",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3953",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3944",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3944",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3944",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3942",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3942",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3938",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3942",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3938",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3938",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3882",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3894",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3882",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3894",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3882",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3894",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3935",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3935",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3905",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3935",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3905",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3905",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3930",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3930",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3930",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "httpx_3672",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14791",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "httpx_3672",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "httpx_3672",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14791",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14791",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15800",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15785",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15785",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15785",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15800",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15800",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14371",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14371",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14371",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14605",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_15763",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_15763",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14605",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14605",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15763",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14583",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14583",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14583",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15745",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15745",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_15745",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14297",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14297",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14297",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14303",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14303",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14303",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13537",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13537",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13537",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14953",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14953",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "fastapi_14953",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13786",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13786",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_13786",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14616",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14616",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_11194",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_11194",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_11194",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_6757",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "fastapi_14616",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_6757",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6629",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6757",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6644",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6629",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_6629",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6644",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "requests_6589",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6644",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6589",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6589",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6592",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3180",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3180",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3180",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6592",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "requests_6592",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3486",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3486",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3777",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3486",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3777",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3777",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3468",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3468",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3468",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3782",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3782",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3772",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3772",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3772",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3782",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3296",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3296",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3296",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3675",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3676",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3675",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3676",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3675",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3518",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3676",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3518",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3518",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3535",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3535",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3521",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3535",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3521",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3521",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3506",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3506",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3506",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3480",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3480",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3480",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3472",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3472",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3472",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3454",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3471",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3471",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3454",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3471",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3470",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3470",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3454",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3470",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3469",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3469",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3469",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3052",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3278",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3052",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3278",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3052",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3278",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_2943",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_2943",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_2943",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_2725",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_2725",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_2725",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3105",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3105",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3105",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3130",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3130",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3130",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3043",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3043",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3043",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3067",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3067",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3006",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3067",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3064",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3064",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3006",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": true
+    },
+    {
+      "task_id": "rich_3006",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3064",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3063",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": true,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3063",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3061",
+      "candidate_type": "gold_fix",
+      "oracle_label": true,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3061",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3061",
+      "candidate_type": "sycophantic_drift",
+      "oracle_label": false,
+      "v_free": false,
+      "v_graph": false
+    },
+    {
+      "task_id": "rich_3063",
+      "candidate_type": "partial_contract_violation",
+      "oracle_label": false,
+      "v_free": true,
+      "v_graph": false
+    }
+  ]
+}

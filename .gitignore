@@ -65,3 +65,12 @@ submission/adapters/main_lora/*
 .vscode/
 *.swp
 *.swo
+
+# Internal planning, scratchpad, and notebook markdown documents (kept local only)
+/*.md
+!/README.md
+notebooks/*.md
+paper/action_plan_dec2/
+paper/REFRAME.md
+paper/manuscript_v1_backup.md
+

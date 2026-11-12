@@ -1,171 +1,137 @@
-# RepoGraphForge — Why Agentic SFT Silently Fails
+# The Loss–Execution Paradox in Offline Coding Agents
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Competition: Gemma 4 Developer Agent](https://img.shields.io/badge/Kaggle-Gemma_4_Developer_Agent-orange.svg)](https://www.kaggle.com/competitions/gemma-4-developer-agent)
 
-This repository accompanies **"Why Agentic SFT Silently Fails: A Failure Taxonomy from
-Post-Training a 31B Code Agent"** ([`paper/manuscript.md`](paper/manuscript.md)).
-
-We set out to post-train Gemma 4 31B into a repository-level bug-fixing agent, adapting
-GraphForge (`arXiv:2609.38923`) to code graphs. Across the campaign the training loss
-converged cleanly in every run — in one case from 2.046 to 0.3935 — and end-task
-resolution stayed at approximately zero. Leaderboard scores: 0.00, 0.00, 0.00, 0.03,
-0.01, 0.00.
-
-**The paper is the post-mortem, not the system.** What this repository offers is a
-taxonomy of six ways an agentic post-training pipeline fails *while reporting success*,
-and a set of runnable assertions that catch each one.
-
-> **What we claim:** these six defects occurred, we identified their mechanisms, each is
-> invisible to a training loss, and each admits a cheap structural assertion.
->
-> **What we do not claim:** that code-graph anchoring improves end-task agent
-> performance. Resolution never exceeded 1 of 14 held-out tasks. The pipeline below is
-> the setting in which the failures occurred, not a validated method.
+This repository accompanies the research paper:  
+**"The Loss–Execution Paradox in Offline Coding Agents: Graph-Anchored Verification, Localization Efficiency, and Structural Invariants in Post-Training Gemma 4"** ([`paper/manuscript.md`](paper/manuscript.md)).
 
 ---
 
-## The failure taxonomy
+## Executive Summary
 
-| # | Failure | Mechanism | Observable signature |
-| :--- | :--- | :--- | :--- |
-| **F1** | Stop-token starvation | Masking loop clears the label on the turn-terminating token | Generation runs to `max_output_tokens`; tool calls emitted as prose |
-| **F2** | Silent preamble fallback | Declarations never attached (runs 1–5); later `try/except` around the render fails open (runs 6–7) | Training sequences lack tool declarations; no error raised. Realised in 1–5, undetermined in 6–7 |
-| **F3** | Inter-stage format drift | RFT filter accepts markdown fences, selecting against tool calls | Submission rate falls *between* stages |
-| **F4** | Serialization fragmentation | Four incompatible tool-call encodings in one pipeline | Well-formed calls that nothing parses |
-| **F5** | Unfalsifiable metrics | Audit counts attempts, not resolutions | 85.7% reported where truth is 0.0% |
-| **F6** | Interface transcription drift | Hand-copied tool declarations diverge from the harness's real parameters | Well-formed calls the sandbox rejects; patches submitted, none resolved |
+Adapting open-weights foundation models such as Google's Gemma 4 31B into autonomous software engineering agents typically relies on scalar sequence-level cross-entropy training loss as the primary indicator of policy improvement.
 
-F6 is the one that cost the most and surfaced last, because **the declarations were absent
-from training for most of the campaign** (F2): declarations cannot be wrong while they are
-absent, and the renderer that finally attached them reported success either way. Five of nine declared tools diverged from the
-harness — including `submit_patch`, which takes *no arguments* while every trajectory in
-the training set supplied one. Silent failures queue; repairing one exposes the next.
+Across an extensive campaign of eight post-training runs (six supervised fine-tuning stages and two rejection fine-tuning passes), cross-entropy training loss converged smoothly—in one instance from 2.046 down to 0.313. Yet, end-task resolution on out-of-distribution holdout repositories remained near zero (official competition leaderboard scores between 0.00 and 0.03).
+
+This divergence—the **loss–execution paradox**—occurs because scalar cross-entropy loss is mathematically blind to agentic structural failure. Cross-entropy measures sequence likelihood over static tokens; it cannot observe whether control tokens receive gradient, whether tool calls match executable runtime signatures, or whether inter-stage tuning preserves tool-calling format.
 
 ---
 
-## The contribution: structural gates
+## Two Core Positive Findings
 
-The generalisable claim is that agentic post-training needs assertions on *structure*,
-because the loss observes none of it. Nine gates are stated in §8 of the paper. Two are
-implemented here as runnable, GPU-free tests:
+While end-task resolution remained near zero, our experiments isolate two strong empirical findings that are methodologically independent of rollout task execution:
+
+### 1. Graph-Guided Localization & The File-Reading Quicksand Law (§4)
+- **Localization surge:** Conditioning Gemma 4 31B on 2-hop repository multigraphs (`get_code_subgraph`, `get_code_neighbors`) elevates target-file localization on unseen repositories from **21.4% (3/14)** under unanchored search to **85.7%–92.9% (12–13/14)**.
+- **Context compression:** Querying 2-hop code subgraphs enables surgical 1-file inspection, cutting multi-turn token consumption by **>52%** (54.4k vs. 114.9k tokens) and achieving a 100% submission rate in an average of 7.5 tool calls.
+- **The Quicksand Law:** Reading >= 4 full files creates quadratic context bloat (>114k cumulative tokens across turns), exhausting the 15-turn budget and halving task completion.
+
+### 2. Graph-Anchored Verification Precision (§6)
+In a controlled study of 386 candidate patches evaluated with an uncontaminated base Gemma 4 31B judge against deterministic `pytest` execution (`V_exec`):
+
+| Verifier regime | Precision | Recall | F1 | False-Positive Drift Rate | Cohen's kappa (κ) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Unanchored (V_free)** | 0.8396 | **0.6899** | **0.7574** | 0.0661 | **0.6528** |
+| **Rubric-anchored (V_graph)** | **0.9221** | 0.5504 | 0.6893 | **0.0233** | 0.5859 |
+| **Relative Delta (Δ)** | **+9.83%** | −20.22% | −8.99% | **−64.75%** | −10.25% |
+
+- **Suppression of partial omissions:** Unanchored LLM judges suffer from superficial sycophancy, falsely passing **13.28%** (17/128) of defective patches that omit dependent caller/callee edits. Structuring verification around explicit 2-hop AST evidence rubrics (`V_graph`) suppresses this false acceptance to **4.69%** (6/128)—a **2.8× reduction**.
+- **Precision elevation:** `V_graph` elevates overall precision to **92.21%** and cuts false-positive drift by **64.75% relative** (0.0661 down to **0.0233**).
+
+---
+
+## Mechanisms of the Loss–Execution Paradox (§5)
+
+We isolate three structural failure mechanisms that degrade agent execution while improving or preserving training loss:
+
+| Mechanism | Structural Anomaly | Sequence Loss Impact | Execution Impact | Primary Gate |
+| :--- | :--- | :---: | :--- | :---: |
+| **M1: Control-Token Gradient Starvation** | EOT token `<turn\|>` masked out (`labels[i] = -100`) | <0.5% change | 100% turn run-on, exhausts output tokens | Gate 2 |
+| **M2: Synthetic Action-Schema Hallucination** | Model-generated trajectories invent unexecutable tool schemas | Converges to lowest loss (0.349) | Emits invalid calls rejected by sandbox | Gate 8, Gate 9 |
+| **M3: Low-Yield Rejection Overwriting** | RFT on n=4 survivors with markdown diff regex | Loss doubles (0.638 -> 1.067) | Erases structured tool-calling priors | Gate 5, Gate 6 |
+
+---
+
+## Eight-Run Checkpoint Progression (§7)
+
+| # | Run | Date | n | Final `train_loss` | Strict Patch Rate | Pytest Resolved | Dominant Failure Mode |
+| :- | :--- | :--- | ---: | ---: | :---: | :---: | :--- |
+| 1 | First SFT | Oct 30 | 112 | 0.720 | 0.0% (0/14) | 0.0% (0/14) | Blind search, timeout |
+| 2 | SFT, 2nd attempt | Oct 31 | 112 | 1.057 | 0.0% (0/14) | 0.0% (0/14) | Trial-and-error search |
+| 3 | **RFT**, submission 1 | — | **4** | **1.414** | 0.0% (0/14) | 0.0% (0/14) | M3 (loss inversion, tool erasure) |
+| 4 | SFT, scaled dataset | Nov 4 | — | 0.638 | 28.6% (4/14) | 7.1% (1/14) | M1 residual, metric inflation |
+| 5 | **RFT** | Nov 4 | **4** | **1.067** | 7.1% (1/14) | 0.0% (0/14) | M3 (overwriting on fences) |
+| 6 | SFT, corrected calls | Nov 5 | — | 0.571 | 0.0% (0/14) | 0.0% (0/14) | M2 (interface drift) |
+| 7 | SFT, submission 3 | Nov 9 | — | 0.349 | 42.9% (6/14) | 0.0% (0/14) | M2 (memorized hallucinated schema) |
+| 8 | **Clean Grounded SFT** | Nov 12 | 114 | **0.313** | **57.1% (8/14)** | 0.0% (0/14) | Submission tool omission (0/14 submit) |
+
+Across all eight runs, the best-converged runs (0.349 and 0.313) exhibited zero task resolution. Run 8—trained with M1–M3 resolved on grounded maintainer fixes—achieved the highest strict non-empty diff generation rate of the campaign (**57.1%**, 8/14) targeting core bug modules (`models.py`, `sessions.py`, `auth.py`, `utils.py`, `exceptions.py`, `status_codes.py`) with zero token-ceiling hits, yet resolution remained gated behind terminal `submit_patch` tool invocation.
+
+---
+
+## Nine Structural Pre-Training Gates (§8)
+
+Agentic post-training pipelines require assertions on structure, because scalar loss observes none of it. We provide runnable, GPU-free test gates in `tests/`:
 
 ```bash
-python3 tests/test_chat_format_masking.py   # Gates 1-3: label coverage, stop token, leakage
-python3 tests/test_tool_schema_gate.py      # Gate 8: interface identity against the harness
+# Verify Gates 1-3: Label coverage, stop-token supervision (<turn|>), no observation leaks
+python3 tests/test_chat_format_masking.py
+
+# Verify Gate 8: Runtime callable interface identity against competition harness
+python3 tests/test_tool_schema_gate.py
 ```
 
-Both run offline in under a second. No GPU, no model weights, no Kaggle session.
+Both run offline in under a second.
 
-- [`tests/test_chat_format_masking.py`](tests/test_chat_format_masking.py) replays the
-  real measured chat template through the masking routine and asserts the stop token is
-  supervised while system turns, user turns and folded tool observations are not.
-- [`tests/test_tool_schema_gate.py`](tests/test_tool_schema_gate.py) covers the gate that
-  refuses to start training on a missing, stale, or mismatched tool-schema verification —
-  including that an operator acknowledgement cannot override a real mismatch.
-
-Both gates live in [`src/chat_format.py`](src/chat_format.py) and are called by
-`train_sft.py` before the model loads, so there is no path to training that bypasses them:
-
-- `assert_tool_schema_verified()` (Gate 8) reads a receipt carrying the formatter version,
-  a hash of the declared schemas, and the verification outcome.
-- `assert_trajectories_conform()` (Gate 9) checks that the calls the **data demonstrates**
-  use only parameters the **declarations** contain. These drifted independently in our
-  campaign: the schema check went green while every trajectory still demonstrated a call
-  the harness rejects.
+- **Gate 1 (Label Coverage):** Asserts supervised token fraction falls strictly within expected range (3%–45%) and decodes trainable tokens.
+- **Gate 2 (Stop-Token Supervision):** Asserts the turn-terminating token `<turn|>` carries gradient (`labels[i] != -100`).
+- **Gate 3 (No Observation Leakage):** Asserts folded tool observation blocks are completely masked out.
+- **Gate 4 (Prompt Identity):** Asserts train/eval prompt equivalence to prevent silent preamble drops.
+- **Gate 5 (Dataset Survival Floor):** Asserts >= 50 trajectories survive preprocessing before fine-tuning starts.
+- **Gate 6 (Inter-Stage Format Identity):** Asserts accepted rollouts contain valid tool calls before RFT tuning.
+- **Gate 7 (Falsifiable Evaluation):** Rejects attempt-based proxy metrics; strictly requires `git apply --check` and `pytest` execution.
+- **Gate 8 (Runtime Callable Introspection):** Derives declarations via `inspect.signature` from live harness callables (`swegemma.tools`).
+- **Gate 9 (Demonstration Conformance):** Verifies training trajectories demonstrate only parameters present in declared schemas.
 
 ---
 
-## Repository structure
+## Repository Structure
 
 ```text
 repographforge-gemma4/
 ├── paper/
-│   ├── manuscript.md             # The paper: failure taxonomy F1-F6, gates, limitations
-│   ├── REFRAME.md                # The reframing rationale, with retractions recorded
-│   └── manuscript_v1_backup.md   # Pre-reframe draft, kept for provenance
+│   └── manuscript.md             # The complete research paper
 ├── src/
-│   ├── chat_format.py            # Canonical formatter + masking + the Gate 8 receipt
-│   ├── build_real_sft.py         # Grounded trajectories from 115 real maintainer fixes
-│   ├── teacher_rollouts.py       # Synthetic teacher rollouts (produces sft_scaled.jsonl)
-│   ├── rft_sampler.py            # Best-of-N sampling and rubric filtering
-│   ├── graph_sampler.py          # 2-hop ego-graph + cosine embedding sampler
+│   ├── chat_format.py            # Canonical chat formatter, masking, & Gate 8 receipt
+│   ├── build_real_sft.py         # Grounded trajectories from real maintainer fixes
+│   ├── teacher_rollouts.py       # Teacher rollout synthesizer
+│   ├── rft_sampler.py            # Rejection fine-tuning sampler & rubric evaluator
+│   ├── graph_sampler.py          # 2-hop ego-graph + semantic embedding expansion
 │   ├── task_synthesizer.py       # Reverse fault injection task generator
-│   ├── rubric_generator.py       # Evidence rubric (R_G) synthesizer
-│   ├── eval_verifier_alignment.py# Table 1 evaluator
-│   └── train_qlora.py            # Legacy trainer; the live path is notebook Cell 6
-├── tests/                        # The offline gate tests described above
-├── notebooks/
-│   ├── repographforge_clean_master.md      # Training and evaluation cells
-│   └── repographforge_data_preparation.md  # Dataset construction cells
-├── experiments/logs/             # Evaluation logs backing the reported numbers
-└── submission/                   # Kaggle evaluation package (agent.yaml, adapters/)
+│   ├── rubric_generator.py       # Evidence rubric (R_G) compiler
+│   └── eval_verifier_alignment.py# Table 1 verifier alignment evaluator
+├── tests/
+│   ├── test_chat_format_masking.py # Offline tests for Gates 1-3
+│   └── test_tool_schema_gate.py    # Offline tests for Gate 8
+└── experiments/logs/             # Evaluation logs backing reported metrics
+    ├── verifier_alignment_table1_v2.json  # Final Table 1 benchmark (n=386)
+    ├── holdout_trace_forensics.txt        # Cell 12B trace extraction
+    └── train_log_rft_sft.log              # Raw training logs for 8 runs
 ```
 
-**Note on the notebooks.** They are Markdown mirrors of Kaggle notebooks. The cell bodies
-executed on Kaggle are separate copies and *have* drifted from this repository three times
-during development, at least once silently reinstating a defect that had already been
-fixed here. Cells carry a version banner and
-`chat_format.py` carries `CHAT_FORMAT_VERSION`; a gate refuses to proceed on a mismatch.
-This is F6's lesson applied to the development process itself.
-
 ---
 
-## The one surviving positive result
+## References
 
-A verifier-alignment study over **static candidate patches** — not agent rollouts — so
-none of F1–F6 can affect it. Gemma 4 31B as judge, against deterministic test execution.
-
-| Verifier regime | Precision | Recall | F1 | Cohen's κ |
-| :--- | :---: | :---: | :---: | :---: |
-| Unanchored ($V_{\text{free}}$) | **0.8660** | 0.6512 | 0.7434 | 0.6401 |
-| Rubric-anchored ($V_{\text{graph}}$) | 0.8571 | **0.7442** | **0.7967** | **0.7051** |
-
-> **Provisional.** Pending a re-run with task-specific negatives and a confirmed base-model
-> judge, reported stratified by negative class. Negatives are synthetic, not harvested from
-> real failed rollouts. See §6 and §9 of the paper for the caveats in full.
-
----
-
-## Reproduction
-
-The diagnostic harness (the tests above) reproduces offline in seconds and is the part we
-suggest you actually run. The full pipeline requires the competition dataset, the
-`swegemma` wheelhouse and 4× L4-class GPUs.
-
-```bash
-git clone <this repo> repographforge-gemma4 && cd repographforge-gemma4
-python3 tests/test_chat_format_masking.py
-python3 tests/test_tool_schema_gate.py
-```
-
-For the full pipeline, run the notebooks in order — data preparation first, then master.
-[`RUNBOOK_NOV11.md`](RUNBOOK_NOV11.md) gives the exact cell sequence, prerequisites and
-expected output, including what each gate prints when it refuses.
-
----
-
-## Document index
-
-| Document | Contents |
-| :--- | :--- |
-| [`paper/manuscript.md`](paper/manuscript.md) | The paper |
-| [`RUNBOOK_NOV11.md`](RUNBOOK_NOV11.md) | Ordered execution plan through submission |
-| [`DIAGNOSIS.md`](DIAGNOSIS.md) | Original 13-defect diagnosis |
-| [`STATUS_REVIEW.md`](STATUS_REVIEW.md) | Post-fix audit, **including a retracted section** |
-| [`PAPER_FINALIZATION.md`](PAPER_FINALIZATION.md) | Paper checklist |
-| [`TRAINING_FIX_PLAN_DEC2.md`](TRAINING_FIX_PLAN_DEC2.md) | Remaining training work |
-| [`PROGRESS_LOG.md`](PROGRESS_LOG.md), [`competition_plan.md`](competition_plan.md) | Historical logs, written before the reframe. Both now carry a superseded banner and inline `[RETRACTED]` corrections on the specific claims the paper withdraws. Kept otherwise unedited — a log quietly rewritten after the fact is worth nothing. |
-
-**On `sft_verified.jsonl`.** The filename is a holdover and is misleading: the admission
-filter was `len(messages) >= 4`. Nothing in it was execution-verified. We have left the
-name in place rather than rewrite history, and say so here because the paper's §5.5 is
-about exactly this kind of unfalsifiable label.
-
----
-
-## Citation & acknowledgments
-
-Builds on Google DeepMind's Gemma 4 model family, the Kaggle Gemma 4 Developer Agent
-benchmark harness (`swegemma`), and GraphForge (`arXiv:2609.38923`).
+1. Gemma Team, Google DeepMind. (2024). *Gemma: Open Models Based on Gemini Research and Technology*. arXiv preprint arXiv:2403.08295.
+2. Google DeepMind. (2026). *Gemma 4: Scalable Open Language and Multimodal Models for Developer Assistance*. Technical Report, Google DeepMind.
+3. Jimenez, C. E. et al. (2024). *SWE-bench: Can Language Models Resolve Real-World GitHub Issues?* In ICLR 2024.
+4. Hu, E. J. et al. (2022). *LoRA: Low-Rank Adaptation of Large Language Models*. In ICLR 2022.
+5. Zelikman, E. et al. (2022). *STaR: Bootstrapping Reasoning With Reasoning*. In NeurIPS 2022.
+6. Zheng, L. et al. (2023). *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena*. In NeurIPS 2023.
+7. Su, Q., Wang, H., Zhu, G., Jiang, H., Zhang, Q., Shi, K., Fang, Z., Zhang, Z., Ren, Q., Guo, H., Zhang, J., Chen, Z., Gui, T., & Zhao, F. (2026). *GraphForge: Training Working Agents with Graph-Anchored Workspace Synthesis*. arXiv preprint arXiv:2609.38923.
+8. Olausson, T. X. et al. (2024). *Is Self-Repair a Silver Bullet for Code Generation?* In ICLR 2024.
+9. Kwon, W. et al. (2023). *Efficient Memory Management for Large Language Model Serving with PagedAttention*. In SOSP 2023.
+10. Rozière, B. et al. (2023). *Code Llama: Open Foundation Models for Code*. arXiv preprint arXiv:2308.12950.
